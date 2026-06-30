@@ -72,7 +72,8 @@ function LoginContent() {
           });
 
           if (signUpError) {
-            setError(signUpError.message);
+            console.error('Signup error:', signUpError);
+            setError(signUpError.message || 'Signup failed');
             setLoading(false);
             return;
           }
@@ -89,6 +90,7 @@ function LoginContent() {
               .single();
 
             if (profileError || !profileData) {
+              console.error('Profile error after signup:', profileError);
               setError('Account created but profile not found. Please try logging in again.');
               setLoading(false);
               return;
@@ -110,7 +112,8 @@ function LoginContent() {
             router.refresh();
           }
         } else {
-          setError(signInError.message);
+          console.error('Sign in error:', signInError);
+          setError(signInError.message || 'Sign in failed');
           setLoading(false);
         }
         return;
@@ -149,7 +152,7 @@ function LoginContent() {
       }
     } catch (err: any) {
       console.error('Login error:', err);
-      setError(err?.message || 'Login failed. Please try again.');
+      setError(err?.message || String(err) || 'Login failed. Please try again.');
       setLoading(false);
     }
   };
@@ -160,7 +163,7 @@ function LoginContent() {
     try {
       const redirectURL = typeof window !== 'undefined' 
         ? `${window.location.origin}/auth/callback`
-        : 'http://localhost:3001/auth/callback';
+        : 'http://localhost:3004/auth/callback';
       
       console.log('Google OAuth redirect URL:', redirectURL);
       
@@ -172,12 +175,13 @@ function LoginContent() {
       });
 
       if (signInError) {
-        setError(signInError.message);
+        console.error('Google OAuth error:', signInError);
+        setError(signInError.message || 'Google login failed');
         setGoogleLoading(false);
       }
     } catch (err: any) {
       console.error('Google login error:', err);
-      setError('Google login failed. Make sure Google OAuth is configured in Supabase.');
+      setError(err?.message || String(err) || 'Google login failed. Make sure Google OAuth is configured in Supabase.');
       setGoogleLoading(false);
     }
   };
@@ -383,7 +387,7 @@ function LoginContent() {
               setResetLoading(true);
               try {
                 const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
-                  redirectTo: `${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001'}/auth/reset-password`,
+                  redirectTo: `${typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3004'}/auth/reset-password`,
                 });
                 if (error) {
                   setError(error.message);

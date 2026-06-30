@@ -42,11 +42,6 @@ export default function LeadRow({ lead, isExpanded, isSelected, onToggleExpand, 
     onStatusChange(lead.uniqueKey, newStatus);
   };
 
-  const handleAddStatus = (newStatus: string) => {
-    // Add new status to the lead
-    onStatusChange(lead.uniqueKey, newStatus);
-  };
-
   const platformLabel = PLATFORM_LABELS[lead.platform] || "[FB]";
   const formattedDate = lead.lastMessageDate
     ? format(lead.lastMessageDate, "dd MMM yyyy")
@@ -92,7 +87,6 @@ export default function LeadRow({ lead, isExpanded, isSelected, onToggleExpand, 
               currentStatus={lead.leadStatus}
               availableStatuses={availableStatuses}
               onStatusChange={handleStatusChange}
-              onAddStatus={handleAddStatus}
             />
           </div>
         </td>

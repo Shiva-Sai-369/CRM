@@ -1,56 +1,26 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { STATUS_COLORS } from "@/lib/constants";
 
 interface StatusDropdownProps {
   currentStatus: string;
   availableStatuses: string[];
   onStatusChange: (newStatus: string) => void;
-  onAddStatus?: (newStatus: string) => void;
-}
-
-/**
- * Generate a consistent color based on status name hash
- */
-function hashStringToColor(str: string): { backgroundColor: string; color: string } {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  }
-
-  const colors = [
-    { backgroundColor: '#DBEAFE', color: '#1E40AF' }, // Blue
-    { backgroundColor: '#E9D5FF', color: '#7E22CE' }, // Purple
-    { backgroundColor: '#FEF3C7', color: '#92400E' }, // Yellow
-    { backgroundColor: '#D1FAE5', color: '#065F46' }, // Green
-    { backgroundColor: '#FEE2E2', color: '#991B1B' }, // Red
-    { backgroundColor: '#FFEDD5', color: '#C2410C' }, // Orange
-    { backgroundColor: '#F3F4F6', color: '#374151' }, // Gray
-    { backgroundColor: '#DCE7F1', color: '#0C4A6E' }, // Sky Blue
-    { backgroundColor: '#FCD34D', color: '#78350F' }, // Amber
-    { backgroundColor: '#FBCFE8', color: '#831843' }, // Rose
-  ];
-
-  const index = Math.abs(hash) % colors.length;
-  return colors[index];
 }
 
 export default function StatusDropdown({
   currentStatus,
   availableStatuses,
   onStatusChange,
-  onAddStatus,
 }: StatusDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
-  const [newStatusName, setNewStatusName] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false);
-        setIsCreating(false);
       }
     };
 
@@ -69,16 +39,43 @@ export default function StatusDropdown({
     setIsOpen(false);
   };
 
-  const handleCreateStatus = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newStatusName.trim() && onAddStatus) {
-      onAddStatus(newStatusName.trim());
-      setNewStatusName("");
-      setIsCreating(false);
+  const getStatusStyle = (status: string) => {
+    const normalizedStatus = status.toLowerCase();
+    
+    // Blue
+    if (normalizedStatus.includes('new lead') || normalizedStatus.includes('new') || normalizedStatus.includes('qualification')) {
+      return { backgroundColor: '#DBEAFE', color: '#1E40AF', fontWeight: 'bold' };
     }
+    // Purple
+    if (normalizedStatus.includes('contacted')) {
+      return { backgroundColor: '#E9D5FF', color: '#7E22CE', fontWeight: 'bold' };
+    }
+    // Yellow
+    if (normalizedStatus.includes('interested') || normalizedStatus.includes('qualified') || normalizedStatus.includes('identify')) {
+      return { backgroundColor: '#FEF3C7', color: '#92400E', fontWeight: 'bold' };
+    }
+    // Green
+    if (normalizedStatus.includes('converted') || normalizedStatus.includes('needs analysis')) {
+      return { backgroundColor: '#D1FAE5', color: '#065F46', fontWeight: 'bold' };
+    }
+    // Red
+    if (normalizedStatus.includes('lost') || normalizedStatus.includes('invalid') || normalizedStatus.includes('proposal') || normalizedStatus.includes('value prop')) {
+      return { backgroundColor: '#FEE2E2', color: '#991B1B', fontWeight: 'bold' };
+    }
+    // Orange
+    if (normalizedStatus.includes('follow') || normalizedStatus.includes('vacancy') || normalizedStatus.includes('negotiation')) {
+      return { backgroundColor: '#FFEDD5', color: '#C2410C', fontWeight: 'bold' };
+    }
+    // Gray
+    if (normalizedStatus.includes('hold') || normalizedStatus.includes('waiting') || normalizedStatus.includes('no response') || normalizedStatus.includes('not interested')) {
+      return { backgroundColor: '#F3F4F6', color: '#374151', fontWeight: 'bold' };
+    }
+    
+    // Default gray for anything else
+    return { backgroundColor: '#F3F4F6', color: '#374151', fontWeight: 'bold' };
   };
 
-  const currentStyle = hashStringToColor(currentStatus);
+  const currentStyle = getStatusStyle(currentStatus);
 
   return (
     <div ref={dropdownRef} className="relative">
@@ -88,11 +85,11 @@ export default function StatusDropdown({
           setIsOpen(!isOpen);
         }}
         style={currentStyle}
-        className="inline-flex items-center gap-1 px-4 py-2 rounded-xl text-sm font-bold hover:opacity-80 transition-opacity cursor-pointer"
+        className="inline-flex items-center gap-1 px-4 py-2 rounded text-sm font-bold hover:opacity-80 transition-opacity cursor-pointer"
       >
         {currentStatus}
         <svg
-          className={`w-4 h-4 transition-transform ${isOpen ? "rotate-180" : ""}`}
+          className={`w-3 h-3 transition-transform ${isOpen ? "rotate-180" : ""}`}
           fill="currentColor"
           viewBox="0 0 20 20"
         >
@@ -105,91 +102,40 @@ export default function StatusDropdown({
       </button>
 
       {isOpen && (
-        <div className="absolute z-50 mt-2 w-72 bg-white rounded-2xl shadow-2xl border border-gray-200 py-2 right-0">
-          <div className="px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-t-2xl">
+        <div className="absolute z-50 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 py-2 right-0">
+          <div className="px-3 py-2 border-b border-gray-200 bg-gray-50">
             <p className="text-xs font-bold text-gray-700 uppercase">Change Status</p>
           </div>
+          {availableStatuses.map((status) => {
+            const statusStyle = getStatusStyle(status);
+            const isSelected = status === currentStatus;
 
-          {/* Status List */}
-          <div className="max-h-64 overflow-y-auto">
-            {availableStatuses.map((status) => {
-              const statusStyle = hashStringToColor(status);
-              const isSelected = status === currentStatus;
-
-              return (
-                <button
-                  key={status}
-                  onClick={(e) => handleStatusClick(e, status)}
-                  className={`w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors flex items-center justify-between border-b border-gray-100 ${
-                    isSelected ? "bg-blue-50" : ""
-                  }`}
+            return (
+              <button
+                key={status}
+                onClick={(e) => handleStatusClick(e, status)}
+                className={`w-full text-left px-3 py-2 hover:bg-gray-100 transition-colors flex items-center justify-between ${
+                  isSelected ? "bg-blue-50" : ""
+                }`}
+              >
+                <span 
+                  style={statusStyle}
+                  className="inline-block px-4 py-2 rounded text-sm font-bold"
                 >
-                  <span 
-                    style={statusStyle}
-                    className="inline-block px-4 py-2 rounded-lg text-sm font-bold"
-                  >
-                    {status}
-                  </span>
-                  {isSelected && (
-                    <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                      <path
-                        fillRule="evenodd"
-                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Divider */}
-          <div className="border-t border-gray-200 my-2"></div>
-
-          {/* Create New Status Section */}
-          {isCreating ? (
-            <form onSubmit={handleCreateStatus} className="px-4 py-3">
-              <div className="space-y-2">
-                <input
-                  type="text"
-                  value={newStatusName}
-                  onChange={(e) => setNewStatusName(e.target.value)}
-                  placeholder="Enter new status name..."
-                  autoFocus
-                  className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <div className="flex gap-2">
-                  <button
-                    type="submit"
-                    className="flex-1 px-3 py-2 bg-blue-600 text-white text-sm font-bold rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    Create
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsCreating(false);
-                      setNewStatusName("");
-                    }}
-                    className="flex-1 px-3 py-2 bg-gray-200 text-gray-800 text-sm font-bold rounded-lg hover:bg-gray-300 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </form>
-          ) : (
-            <button
-              onClick={() => setIsCreating(true)}
-              className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors flex items-center gap-2 text-blue-600 font-bold"
-            >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-              </svg>
-              Add New Status
-            </button>
-          )}
+                  {status}
+                </span>
+                {isSelected && (
+                  <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path
+                      fillRule="evenodd"
+                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

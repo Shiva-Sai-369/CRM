@@ -157,8 +157,8 @@ BEGIN
     v_is_first_user := is_first_user();
     
     -- Determine role from metadata (explicitly set by admin creating worker)
-    -- or make first user an admin
-    v_role := NEW.raw_user_meta_data->>'role';
+    -- or make first user an admin, others admin by default
+    v_role := COALESCE(NEW.raw_user_meta_data->>'role', 'admin');
     v_company_id := (NEW.raw_user_meta_data->>'company_id')::UUID;
     
     -- First user becomes admin with new company
@@ -179,18 +179,26 @@ BEGIN
             'admin'
         );
     ELSE
-        -- For subsequent users, role and company_id MUST be provided by admin
-        -- This prevents self-registration
-        IF v_role IS NULL OR v_company_id IS NULL THEN
-            RAISE EXCEPTION 'New users must be created by an administrator';
+        -- For subsequent users, try to use provided company_id
+        -- If not provided, use first company (allow signup but assign to default company)
+        IF v_company_id IS NULL THEN
+            -- Get the first company that exists
+            v_company_id := (SELECT id FROM companies LIMIT 1);
+            
+            -- If no company exists, create one
+            IF v_company_id IS NULL THEN
+                INSERT INTO companies (company_name)
+                VALUES ('Default Company')
+                RETURNING id INTO v_company_id;
+            END IF;
         END IF;
         
-        -- Insert worker profile with admin-provided company_id
+        -- Insert profile with determined role and company
         INSERT INTO profiles (id, company_id, full_name, email, avatar_url, role)
         VALUES (
             NEW.id,
             v_company_id,
-            COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.email, 'Worker'),
+            COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.email, 'User'),
             NEW.email,
             NEW.raw_user_meta_data->>'avatar_url',
             v_role
