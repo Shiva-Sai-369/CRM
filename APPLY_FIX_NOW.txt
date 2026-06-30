@@ -1,0 +1,162 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                   🚀 APPLY THE FIX RIGHT NOW                              ║
+║                                                                            ║
+║               Takes 2 minutes - Copy & paste one SQL script                ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+
+THE EXACT STEPS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1️⃣ OPEN SUPABASE
+   
+   In browser:
+   https://app.supabase.com/
+   
+   Select project: grlwnzlxvolzwdyejaji
+
+
+2️⃣ GO TO SQL EDITOR
+   
+   Left sidebar:
+   Click: SQL Editor (or database icon)
+   
+   Top right:
+   Click: New Query
+
+
+3️⃣ OPEN THE FIX FILE
+   
+   In your code editor:
+   File: FIX_PROFILE_TRIGGER.sql
+   Location: d:\WebRockets\CRM\FIX_PROFILE_TRIGGER.sql
+   
+   Select all: Ctrl+A
+   Copy: Ctrl+C
+
+
+4️⃣ PASTE INTO SUPABASE
+   
+   In Supabase SQL Editor:
+   Click in text area
+   Paste: Ctrl+V
+   
+   You should see this SQL:
+   ─────────────────────
+   -- DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+   ALTER TABLE profiles 
+   ALTER COLUMN company_id DROP NOT NULL;
+   
+   CREATE OR REPLACE FUNCTION handle_new_user()
+   ...
+   ─────────────────────
+
+
+5️⃣ RUN THE QUERY
+   
+   Click: RUN button (blue button, top right)
+   Or: Press Ctrl+Enter
+   
+   Wait for: 
+   - Loading icon (spinning circle)
+   - Then: "Success" message (green)
+
+
+6️⃣ DONE!
+   
+   The fix is applied!
+   
+   Next: Try creating a user again
+
+
+7️⃣ CREATE TEST USER
+   
+   In Supabase:
+   Left sidebar → Authentication
+   Click: Users tab
+   Click: Add user
+   
+   Email: test@example.com
+   Password: Test123456!
+   
+   Uncheck: "Auto generate password"
+   
+   Click: Create user
+   
+   Wait for: Success message
+
+
+8️⃣ ASSIGN TO COMPANY
+   
+   Click on the new user in the list
+   
+   Scroll down
+   
+   Find: Company ID field
+   
+   Click: Select a company
+   
+   Save
+
+
+9️⃣ TEST LOGIN
+   
+   In browser:
+   http://localhost:3001/login
+   
+   Email: test@example.com
+   Password: Test123456!
+   Role: Worker (or Admin)
+   
+   Click: Sign In
+   
+   Expected: Redirected to dashboard ✅
+
+
+THAT'S IT! YOU'RE DONE!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+If everything worked:
+✓ User created successfully
+✓ Profile auto-created
+✓ Can login with that user
+✓ App is fully functional!
+
+
+TROUBLESHOOTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+SQL didn't run:
+  → Make sure you copied the entire file
+  → Make sure you clicked RUN
+  → Check for error messages (red box)
+
+Still getting "Failed to create user" error:
+  → Refresh Supabase page (F5)
+  → Try creating user again
+  → If still fails, check SQL Editor for errors
+
+Can't assign company to user:
+  → Maybe need to create a company first
+  → Try this SQL in SQL Editor:
+     INSERT INTO companies (company_name) VALUES ('My Company');
+  → Then try assigning user again
+
+Login doesn't work:
+  → Make sure user is assigned to a company
+  → Check email and password are correct
+  → Check browser console (F12) for errors
+
+
+═══════════════════════════════════════════════════════════════════════════════
+
+Ready? Let's go!
+
+1. Open Supabase
+2. SQL Editor → New Query
+3. Copy FIX_PROFILE_TRIGGER.sql
+4. Paste & Run
+5. Create user
+6. Test login
+
+═══════════════════════════════════════════════════════════════════════════════
