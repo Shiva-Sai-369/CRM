@@ -20,10 +20,10 @@ export default function StatsStrip({ leads }: StatsStripProps) {
     .sort((a, b) => b[1] - a[1])
     .map(([status, count]) => {
       // Get color mapping for border
-      const colorClass = STATUS_COLORS[status] || "bg-gray-50 text-gray-700";
-      // Extract the color from the class to use for border
-      const colorMatch = colorClass.match(/text-(\w+)-(\d+)/);
-      const borderColor = colorMatch ? `border-${colorMatch[1]}-${colorMatch[2]}` : "border-gray-500";
+      const colorClass = STATUS_COLORS[status] || "bg-gray-50 text-gray-700 border-gray-500";
+      // Extract the border color from the class
+      const borderMatch = colorClass.match(/border-(\w+)-(\d+)/);
+      const borderColor = borderMatch ? `border-${borderMatch[1]}-${borderMatch[2]}` : "border-gray-500";
       
       return {
         status,
