@@ -259,6 +259,7 @@ export function parseLeadsFromCsv(csvData: string): Lead[] {
 
 /**
  * Fetch and parse leads from a CSV URL
+ * @deprecated Use fetchLeads from '@/lib/services/fetchLeads' instead
  * @param url - CSV URL to fetch from
  * @returns Promise resolving to array of Lead objects
  */

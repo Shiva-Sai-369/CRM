@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { Toaster } from "react-hot-toast";
 import Sidebar from "@/components/Sidebar";
 
 export const metadata: Metadata = {
@@ -15,9 +16,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
-        <div className="flex h-screen bg-gray-50">
+        <Toaster position="top-right" />
+        <div className="flex h-screen">
           <Sidebar />
-          <main className="flex-1 overflow-auto">
+          <main className="flex-1 overflow-y-auto bg-gray-50">
             {children}
           </main>
         </div>

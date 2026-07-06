@@ -10,6 +10,9 @@ interface FilterBarProps {
   availableLeadSources: string[];
   availableLeadStatuses: string[];
   availableTags: string[];
+  onSyncFromSheet?: () => void;
+  syncing?: boolean;
+  connectedSheet?: { displayName: string; range: string } | null;
 }
 
 export default function FilterBar({
@@ -18,6 +21,9 @@ export default function FilterBar({
   availableLeadSources,
   availableLeadStatuses,
   availableTags,
+  onSyncFromSheet,
+  syncing = false,
+  connectedSheet,
 }: FilterBarProps) {
   const {
     search,
@@ -130,13 +136,39 @@ export default function FilterBar({
         </div>
 
         {/* Clear Filters and Result Count */}
-        <div className="flex items-center justify-between">
-          <button
-            onClick={handleClearFilters}
-            className="px-4 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-semibold"
-          >
-            🗑️ Clear Filters
-          </button>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={handleClearFilters}
+              className="px-4 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-semibold"
+            >
+              🗑️ Clear Filters
+            </button>
+            
+            {onSyncFromSheet && (
+              <button
+                onClick={onSyncFromSheet}
+                disabled={syncing}
+                className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {syncing ? (
+                  <>
+                    <span className="inline-block animate-spin mr-2">⟳</span>
+                    Syncing...
+                  </>
+                ) : (
+                  "🔄 Sync from Sheet"
+                )}
+              </button>
+            )}
+
+            {connectedSheet && (
+              <div className="px-3 py-2 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+                <span className="text-green-700 text-sm font-semibold">📊</span>
+                <span className="text-sm text-green-700 font-medium">{connectedSheet.displayName}</span>
+              </div>
+            )}
+          </div>
           
           <p className="text-base text-gray-700">
             Showing <span className="font-black text-blue-600 text-lg">{filteredCount}</span> of{" "}
