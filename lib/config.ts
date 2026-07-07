@@ -1,34 +1,115 @@
 /**
- * Global CRM configuration
+ * Represents a single sheet tab with a name and CSV URL.
  */
+export interface SheetTab {
+  id: string;        // uuid generated on creation
+  name: string;      // user-defined label e.g. "Nizampet Leads"
+  url: string;       // published Google Sheet CSV URL
+  addedAt: string;   // ISO timestamp
+}
+
 export const CONFIG = {
   refreshIntervalMs: 0,
 };
 
+const STORAGE_KEY = 'sheetTabs';
+
 /**
- * Returns the sheet data source URL from localStorage.
- * Can be either a published CSV URL or an Apps Script URL.
+ * Returns all saved sheet tabs from localStorage.
+ * Falls back to migrating the old single URL if present.
  */
-export function getSheetUrl(): string {
-  if (typeof window !== 'undefined') {
-    return (
-      localStorage.getItem('sheetUrl') ||
-      localStorage.getItem('sheetScriptUrl') || // backwards compat
-      localStorage.getItem('sheetCsvUrl') ||    // backwards compat
-      ''
-    );
+export function getSheetTabs(): SheetTab[] {
+  if (typeof window === 'undefined') return [];
+
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (raw) {
+    try {
+      return JSON.parse(raw) as SheetTab[];
+    } catch {
+      return [];
+    }
   }
-  return '';
+
+  // Migrate old single URL to new format automatically
+  const oldUrl =
+    localStorage.getItem('sheetDBUrl') ||
+    localStorage.getItem('sheetUrl') ||
+    localStorage.getItem('sheetScriptUrl') ||
+    localStorage.getItem('sheetCsvUrl') ||
+    '';
+
+  if (oldUrl) {
+    const migrated: SheetTab[] = [
+      {
+        id: crypto.randomUUID(),
+        name: 'Sheet 1',
+        url: oldUrl,
+        addedAt: new Date().toISOString(),
+      },
+    ];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+    return migrated;
+  }
+
+  return [];
 }
 
 /**
- * Saves the sheet URL to localStorage under the unified key 'sheetUrl'.
+ * Saves a new tab. If a tab with the same URL already exists,
+ * updates its name instead of duplicating.
  */
-export function saveSheetUrl(url: string): void {
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('sheetUrl', url.trim());
+export function saveSheetTab(tab: Omit<SheetTab, 'id' | 'addedAt'>): SheetTab {
+  const tabs = getSheetTabs();
+  const existing = tabs.find(t => t.url === tab.url);
+
+  if (existing) {
+    existing.name = tab.name;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(tabs));
+    return existing;
   }
+
+  const newTab: SheetTab = {
+    id: crypto.randomUUID(),
+    name: tab.name,
+    url: tab.url,
+    addedAt: new Date().toISOString(),
+  };
+
+  tabs.push(newTab);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(tabs));
+  return newTab;
 }
+
+/**
+ * Deletes a sheet tab by its id.
+ */
+export function deleteSheetTab(id: string): void {
+  if (typeof window === 'undefined') return;
+  const tabs = getSheetTabs().filter(t => t.id !== id);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(tabs));
+}
+
+/**
+ * Updates the name of an existing tab by id.
+ */
+export function renameSheetTab(id: string, newName: string): void {
+  if (typeof window === 'undefined') return;
+  const tabs = getSheetTabs().map(t =>
+    t.id === id ? { ...t, name: newName } : t
+  );
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(tabs));
+}
+
+/**
+ * Returns true if URL looks like a Google Sheets published CSV.
+ */
+export function isValidCsvUrl(url: string): boolean {
+  return (
+    url.includes('docs.google.com/spreadsheets') &&
+    (url.includes('output=csv') || url.includes('/pub'))
+  );
+}
+
 
 /**
  * Detects whether a URL is a public Google Sheet CSV URL

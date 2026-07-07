@@ -4,11 +4,12 @@ import { useEffect, useState, useMemo } from "react";
 import toast from "react-hot-toast";
 import { filterLeads } from "@/lib/filterLeads";
 import { useFilterStore } from "@/store/filterStore";
-import { fetchLeads as fetchLeadsFromSheet } from "@/lib/services/fetchLeads";
-import { getSheetUrl } from "@/lib/config";
+import { fetchLeadsFromMultipleTabs } from "@/lib/services/fetchLeads";
+import { getSheetTabs, type SheetTab } from "@/lib/config";
 import FilterBar from "@/components/FilterBar";
 import StatsStrip from "@/components/StatsStrip";
 import LeadsTable from "@/components/LeadsTable";
+import TabSelector from "@/components/TabSelector";
 import type { Lead } from "@/lib/parseLeads";
 
 export default function EnquiriesPage() {
@@ -17,23 +18,38 @@ export default function EnquiriesPage() {
   const [error, setError] = useState<string | null>(null);
   const [lastFetchedAt, setLastFetchedAt] = useState<string | null>(null);
 
+  // Tab selection state
+  const [availableTabs, setAvailableTabs] = useState<SheetTab[]>([]);
+  const [selectedTabIds, setSelectedTabIds] = useState<string[]>([]);
+
   const filterState = useFilterStore();
+
+  // Load available tabs on mount
+  useEffect(() => {
+    const tabs = getSheetTabs();
+    setAvailableTabs(tabs);
+  }, []);
 
   // Fetch leads from Google Sheet
   const fetchLeadsData = async () => {
     setLoading(true);
     setError(null);
 
-    const url = getSheetUrl();
+    const allTabs = getSheetTabs();
     
-    if (!url || url.trim() === '') {
-      setError('No sheet URL configured. Go to Settings to add it.');
+    if (allTabs.length === 0) {
+      setError('No sheet tabs configured. Go to Settings to add one.');
       setLoading(false);
       return;
     }
 
+    // Filter tabs based on selection
+    const tabsToFetch = selectedTabIds.length === 0 
+      ? allTabs 
+      : allTabs.filter(tab => selectedTabIds.includes(tab.id));
+
     try {
-      const result = await fetchLeadsFromSheet(url);
+      const result = await fetchLeadsFromMultipleTabs(tabsToFetch);
       
       if (result.error) {
         setError(result.error);
@@ -41,7 +57,7 @@ export default function EnquiriesPage() {
       } else {
         setLeads(result.leads);
         setLastFetchedAt(result.fetchedAt);
-        toast.success(`✓ Loaded ${result.total} leads`);
+        toast.success(`✓ Loaded ${result.total} leads from ${tabsToFetch.length} tab${tabsToFetch.length > 1 ? 's' : ''}`);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load leads';
@@ -55,7 +71,16 @@ export default function EnquiriesPage() {
   // Load leads on mount
   useEffect(() => {
     fetchLeadsData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Re-fetch when tab selection changes
+  useEffect(() => {
+    if (availableTabs.length > 0) {
+      fetchLeadsData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTabIds]);
 
   // Apply filters
   const filteredLeads = useMemo(() => {
@@ -141,6 +166,27 @@ export default function EnquiriesPage() {
 
       {/* Filters */}
       <div className="max-w-7xl mx-auto mb-6">
+        {/* Tab Selector - Show if multiple tabs are configured */}
+        {availableTabs.length > 1 && (
+          <div className="mb-4 bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+            <div className="flex items-center gap-3">
+              <label className="text-sm font-semibold text-gray-700">
+                Filter by Tabs:
+              </label>
+              <TabSelector
+                availableTabs={availableTabs}
+                selectedTabIds={selectedTabIds}
+                onChange={setSelectedTabIds}
+              />
+              <p className="text-xs text-gray-500">
+                {selectedTabIds.length === 0 
+                  ? '✓ Loading from all tabs' 
+                  : `Loading from ${selectedTabIds.length} selected tab${selectedTabIds.length > 1 ? 's' : ''}`}
+              </p>
+            </div>
+          </div>
+        )}
+
         <FilterBar 
           totalLeads={leads.length}
           filteredCount={filteredLeads.length}

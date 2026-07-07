@@ -188,3 +188,73 @@ export async function fetchLeads(url: string): Promise<FetchResult> {
       '• An Apps Script URL: script.google.com/macros/s/.../exec',
   };
 }
+
+import type { SheetTab } from '@/lib/config';
+
+/**
+ * Fetches leads from a single SheetTab.
+ * Tags each lead with sheetTab name for display in the table.
+ *
+ * @param tab - SheetTab object with name and url
+ * @returns FetchResult with leads tagged with sheetTab field
+ */
+export async function fetchLeadsFromTab(tab: SheetTab): Promise<FetchResult> {
+  const result = await fetchLeadsFromCsv(tab.url);
+  return {
+    ...result,
+    leads: result.leads.map(lead => ({
+      ...lead,
+      sheetTab: tab.name,
+    })),
+  };
+}
+
+/**
+ * Fetches leads from multiple SheetTabs in parallel.
+ * Merges all results into a single leads array.
+ * If a tab fails, its error is logged but others still load.
+ *
+ * @param tabs - Array of SheetTab objects to fetch
+ * @returns FetchResult with merged leads from all tabs
+ */
+export async function fetchLeadsFromMultipleTabs(
+  tabs: SheetTab[]
+): Promise<FetchResult> {
+  if (tabs.length === 0) {
+    return {
+      leads: [],
+      total: 0,
+      fetchedAt: new Date().toISOString(),
+      error: 'No sheet tabs configured. Go to Settings to add one.',
+    };
+  }
+
+  const results = await Promise.allSettled(
+    tabs.map(tab => fetchLeadsFromTab(tab))
+  );
+
+  const allLeads: FetchResult['leads'] = [];
+  const errors: string[] = [];
+
+  results.forEach((result, i) => {
+    if (result.status === 'fulfilled') {
+      if (result.value.error) {
+        errors.push(`"${tabs[i].name}": ${result.value.error}`);
+      } else {
+        allLeads.push(...result.value.leads);
+      }
+    } else {
+      errors.push(`"${tabs[i].name}": ${result.reason}`);
+    }
+  });
+
+  return {
+    leads: allLeads,
+    total: allLeads.length,
+    fetchedAt: new Date().toISOString(),
+    error:
+      errors.length > 0
+        ? `Some tabs failed to load: ${errors.join(' | ')}`
+        : null,
+  };
+}
