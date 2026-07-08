@@ -141,3 +141,56 @@ export function detectUrlType(url: string): 'csv' | 'script' | 'unknown' {
   
   return 'unknown';
 }
+
+/**
+ * Extracts the Sheet ID from a full Google Sheets URL.
+ * Also accepts a raw Sheet ID passed directly.
+ *
+ * Handles:
+ *   https://docs.google.com/spreadsheets/d/SHEET_ID/edit
+ *   https://docs.google.com/spreadsheets/d/SHEET_ID/pub
+ *   SHEET_ID (raw string, 20+ alphanumeric chars)
+ *
+ * @param input - full Sheets URL or raw Sheet ID
+ * @returns extracted Sheet ID or null if unrecognized
+ */
+export function extractSheetId(input: string): string | null {
+  if (!input?.trim()) return null;
+  const match = input.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if (match) return match[1];
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(input.trim())) return input.trim();
+  return null;
+}
+
+/**
+ * Builds a published CSV URL for a specific tab using
+ * the Sheet ID and the tab's numeric gid.
+ *
+ * @param sheetId - Google Sheet ID
+ * @param gid - numeric gid of the tab
+ * @returns full published CSV URL string
+ */
+export function buildCsvUrl(sheetId: string, gid: number): string {
+  return (
+    `https://docs.google.com/spreadsheets/d/${sheetId}` +
+    `/pub?gid=${gid}&single=true&output=csv`
+  );
+}
+
+/**
+ * Persists the last used public Sheet ID to localStorage
+ * so it reappears when the user returns to Settings.
+ */
+export function savePublicSheetId(id: string): void {
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('publicSheetId', id);
+  }
+}
+
+/** Returns the last used public Sheet ID from localStorage. */
+export function getPublicSheetId(): string {
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('publicSheetId') || '';
+  }
+  return '';
+}

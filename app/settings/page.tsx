@@ -8,41 +8,94 @@ import {
   deleteSheetTab,
   renameSheetTab,
   isValidCsvUrl,
+  extractSheetId,
+  savePublicSheetId,
+  getPublicSheetId,
   type SheetTab,
 } from '@/lib/config';
-import { fetchLeadsFromCsv } from '@/lib/services/fetchLeads';
+import {
+  fetchLeadsFromCsv,
+  discoverPublicSheetTabs,
+  type DiscoveredTab,
+} from '@/lib/services/fetchLeads';
 
 export default function SettingsPage() {
-  // Form state for adding a new tab
-  const [newName, setNewName] = useState('');
-  const [newUrl, setNewUrl] = useState('');
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{
+  // ── Saved tabs (shared between both sections) ──
+  const [tabs, setTabs] = useState<SheetTab[]>([]);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+
+  // ── Section 1: Public sheet ──
+  const [publicInput, setPublicInput]     = useState('');
+  const [discovering, setDiscovering]     = useState(false);
+  const [discoveredTabs, setDiscoveredTabs] = useState<DiscoveredTab[]>([]);
+  const [selectedGids, setSelectedGids]   = useState<Set<number>>(new Set());
+  const [discoverError, setDiscoverError] = useState<string | null>(null);
+
+  // ── Section 2: Private sheet ──
+  const [privateName, setPrivateName] = useState('');
+  const [privateUrl, setPrivateUrl]   = useState('');
+  const [testing, setTesting]         = useState(false);
+  const [testResult, setTestResult]   = useState<{
     success: boolean;
     message: string;
   } | null>(null);
 
-  // Saved tabs state
-  const [tabs, setTabs] = useState<SheetTab[]>([]);
-
-  // Inline rename state
-  const [renamingId, setRenamingId] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState('');
-
-  // Load saved tabs on mount
   useEffect(() => {
     setTabs(getSheetTabs());
+    setPublicInput(getPublicSheetId());
   }, []);
 
   const refreshTabs = () => setTabs(getSheetTabs());
 
-  const handleTest = async () => {
-    if (!newUrl.trim()) {
-      toast.error('Enter a URL first');
+  // ── Public sheet handlers ──
+  const handleDiscover = async () => {
+    const id = extractSheetId(publicInput);
+    if (!id) {
+      setDiscoverError('Paste your full Google Sheets URL or just the Sheet ID.');
       return;
     }
 
-    if (!isValidCsvUrl(newUrl)) {
+    setDiscovering(true);
+    setDiscoveredTabs([]);
+    setSelectedGids(new Set());
+    setDiscoverError(null);
+
+    const result = await discoverPublicSheetTabs(publicInput);
+    setDiscovering(false);
+
+    if (result.error) {
+      setDiscoverError(result.error);
+      return;
+    }
+
+    setDiscoveredTabs(result.tabs);
+    setSelectedGids(new Set(result.tabs.map(t => t.gid))); // pre-select all
+    savePublicSheetId(id);
+  };
+
+  const toggleGid = (gid: number) => {
+    setSelectedGids(prev => {
+      const next = new Set(prev);
+      next.has(gid) ? next.delete(gid) : next.add(gid);
+      return next;
+    });
+  };
+
+  const handleSavePublicTabs = () => {
+    const toSave = discoveredTabs.filter(t => selectedGids.has(t.gid));
+    if (toSave.length === 0) { toast.error('Select at least one tab'); return; }
+    toSave.forEach(t => saveSheetTab({ name: t.name, url: t.csvUrl }));
+    refreshTabs();
+    setDiscoveredTabs([]);
+    setSelectedGids(new Set());
+    toast.success(`${toSave.length} tab${toSave.length > 1 ? 's' : ''} saved`);
+  };
+
+  // ── Private sheet handlers ──
+  const handleTest = async () => {
+    if (!privateUrl.trim()) { toast.error('Enter a URL first'); return; }
+    if (!isValidCsvUrl(privateUrl)) {
       toast.error('Must be a Google Sheets published CSV URL');
       return;
     }
@@ -50,52 +103,37 @@ export default function SettingsPage() {
     setTesting(true);
     setTestResult(null);
 
-    const result = await fetchLeadsFromCsv(newUrl);
+    const result = await fetchLeadsFromCsv(privateUrl);
     setTesting(false);
 
-    if (result.error) {
-      setTestResult({ success: false, message: result.error });
-    } else {
-      setTestResult({
-        success: true,
-        message: `Connected — ${result.total} leads found`,
-      });
-    }
+    setTestResult(
+      result.error
+        ? { success: false, message: result.error }
+        : { success: true, message: `Connected — ${result.total} leads found` }
+    );
   };
 
-  const handleSave = () => {
-    if (!newName.trim()) {
-      toast.error('Enter a tab name');
-      return;
-    }
-
-    if (!newUrl.trim()) {
-      toast.error('Enter a CSV URL');
-      return;
-    }
-
-    if (!isValidCsvUrl(newUrl)) {
+  const handleSavePrivateTab = () => {
+    if (!privateName.trim()) { toast.error('Enter a tab name'); return; }
+    if (!privateUrl.trim())  { toast.error('Enter a CSV URL'); return; }
+    if (!isValidCsvUrl(privateUrl)) {
       toast.error('Must be a Google Sheets published CSV URL');
       return;
     }
 
-    saveSheetTab({ name: newName.trim(), url: newUrl.trim() });
+    saveSheetTab({ name: privateName.trim(), url: privateUrl.trim() });
     refreshTabs();
-    setNewName('');
-    setNewUrl('');
+    setPrivateName('');
+    setPrivateUrl('');
     setTestResult(null);
-    toast.success(`Tab "${newName.trim()}" saved`);
+    toast.success(`"${privateName.trim()}" saved`);
   };
 
+  // ── Saved tabs handlers ──
   const handleDelete = (tab: SheetTab) => {
     deleteSheetTab(tab.id);
     refreshTabs();
-    toast.success(`Tab "${tab.name}" removed`);
-  };
-
-  const handleRenameStart = (tab: SheetTab) => {
-    setRenamingId(tab.id);
-    setRenameValue(tab.name);
+    toast.success(`"${tab.name}" removed`);
   };
 
   const handleRenameConfirm = (tab: SheetTab) => {
@@ -103,80 +141,218 @@ export default function SettingsPage() {
     renameSheetTab(tab.id, renameValue.trim());
     refreshTabs();
     setRenamingId(null);
-    toast.success('Tab renamed');
+    toast.success('Renamed');
   };
+
+  // ── Shared UI pieces ──
+  const inputClass =
+    'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm ' +
+    'focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white';
+
+  const btnPrimary =
+    'px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg ' +
+    'hover:bg-blue-700 transition-colors disabled:opacity-50 ' +
+    'disabled:cursor-not-allowed flex items-center gap-2';
+
+  const btnSecondary =
+    'px-4 py-2 border border-gray-300 text-gray-700 text-sm rounded-lg ' +
+    'hover:bg-gray-50 transition-colors disabled:opacity-50 ' +
+    'disabled:cursor-not-allowed flex items-center gap-2';
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-4xl mx-auto space-y-6">
-        {/* Page header */}
+        {/* Header */}
         <div className="bg-white border-b border-gray-200 px-6 py-4 rounded-lg shadow-sm">
           <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Add one CSV link per sheet tab. All tabs load together on the Enquiries page.
+            Connect your Google Sheets. Public and private sheets are merged together on the Enquiries page.
           </p>
         </div>
 
-        {/* ── SECTION A: Add new tab ── */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h2 className="text-base font-semibold text-gray-900 mb-4">
-            Add Sheet Tab
-          </h2>
+        {/* ══ SECTION 1 — PUBLIC SHEET ══ */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          {/* Section header */}
+          <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center gap-3">
+            <span className="w-7 h-7 rounded-full bg-green-100 text-green-700 text-xs font-bold flex items-center justify-center flex-shrink-0">
+              1
+            </span>
+            <div>
+              <h2 className="text-sm font-semibold text-gray-900">Public Sheet</h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Sheet shared as "Anyone with link" or published to web. Paste the Sheet ID — all tabs are discovered automatically.
+              </p>
+            </div>
+          </div>
 
-          <div className="space-y-4">
-            {/* Tab name */}
+          <div className="p-6 space-y-4">
+            {/* Sheet ID input */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Google Sheet URL or Sheet ID
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={publicInput}
+                  onChange={e => {
+                    setPublicInput(e.target.value);
+                    setDiscoverError(null);
+                    setDiscoveredTabs([]);
+                    setSelectedGids(new Set());
+                  }}
+                  placeholder="https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/edit"
+                  className={inputClass}
+                />
+                <button
+                  onClick={handleDiscover}
+                  disabled={discovering || !publicInput.trim()}
+                  className={btnPrimary + ' whitespace-nowrap'}
+                >
+                  {discovering ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Fetching...
+                    </>
+                  ) : 'Fetch Tabs'}
+                </button>
+              </div>
+              <p className="text-xs text-gray-400 mt-1">
+                The Sheet ID is the long string in the URL between /d/ and /edit
+              </p>
+            </div>
+
+            {/* Error state */}
+            {discoverError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-800 whitespace-pre-line">
+                {discoverError}
+              </div>
+            )}
+
+            {/* Discovered tabs checklist */}
+            {discoveredTabs.length > 0 && (
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    Found {discoveredTabs.length} tab{discoveredTabs.length > 1 ? 's' : ''}
+                  </span>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setSelectedGids(new Set(discoveredTabs.map(t => t.gid)))}
+                      className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      Select all
+                    </button>
+                    <button
+                      onClick={() => setSelectedGids(new Set())}
+                      className="text-xs text-gray-500 hover:text-gray-700 font-medium"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+
+                <div className="divide-y divide-gray-100">
+                  {discoveredTabs.map(tab => (
+                    <label
+                      key={tab.gid}
+                      className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedGids.has(tab.gid)}
+                        onChange={() => toggleGid(tab.gid)}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium text-gray-800">{tab.name}</span>
+                        <span className="ml-2 text-xs text-gray-400">gid={tab.gid}</span>
+                      </div>
+                      {selectedGids.has(tab.gid) && (
+                        <span className="text-xs text-green-600 font-medium">Will be saved</span>
+                      )}
+                    </label>
+                  ))}
+                </div>
+
+                <div className="px-4 py-3 bg-gray-50 border-t border-gray-200">
+                  <button
+                    onClick={handleSavePublicTabs}
+                    disabled={selectedGids.size === 0}
+                    className={btnPrimary}
+                  >
+                    Save {selectedGids.size > 0 ? `${selectedGids.size} Selected Tab` : 'Selected Tabs'}{selectedGids.size > 1 ? 's' : ''}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ══ SECTION 2 — PRIVATE SHEET ══ */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center gap-3">
+            <span className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center flex-shrink-0">
+              2
+            </span>
+            <div>
+              <h2 className="text-sm font-semibold text-gray-900">Private Sheet</h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Sheet with restricted access. Publish individual tabs to web and paste each CSV URL here one by one.
+              </p>
+            </div>
+          </div>
+
+          <div className="p-6 space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Tab Name
               </label>
               <input
                 type="text"
-                value={newName}
-                onChange={e => setNewName(e.target.value)}
+                value={privateName}
+                onChange={e => setPrivateName(e.target.value)}
                 placeholder="e.g. Nizampet Leads"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                className={inputClass}
               />
             </div>
 
-            {/* CSV URL */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Published CSV URL
               </label>
               <input
                 type="url"
-                value={newUrl}
+                value={privateUrl}
                 onChange={e => {
-                  setNewUrl(e.target.value);
+                  setPrivateUrl(e.target.value);
                   setTestResult(null);
                 }}
                 placeholder="https://docs.google.com/spreadsheets/d/.../pub?output=csv"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                className={inputClass}
               />
               <p className="text-xs text-gray-400 mt-1">
-                In your Google Sheet: File → Share → Publish to web → select the tab → CSV → Publish → copy URL
+                In your sheet: File → Share → Publish to web → select tab → CSV → Publish → copy URL
               </p>
 
-              {/* URL validity badge */}
-              {newUrl.trim() && (
+              {privateUrl.trim() && (
                 <div className="mt-2">
-                  {isValidCsvUrl(newUrl) ? (
+                  {isValidCsvUrl(privateUrl) ? (
                     <span className="inline-flex items-center gap-1.5 px-2 py-1 bg-green-50 text-green-700 border border-green-200 rounded text-xs font-medium">
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
                       Valid CSV URL
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1.5 px-2 py-1 bg-yellow-50 text-yellow-700 border border-yellow-200 rounded text-xs font-medium">
-                      Must be a Google Sheets published CSV URL
+                      Must be a Google Sheets CSV URL
                     </span>
                   )}
                 </div>
               )}
             </div>
 
-            {/* Test result */}
             {testResult && (
               <div
                 className={`p-3 rounded-lg border text-sm font-medium ${
@@ -189,12 +365,11 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* Buttons */}
-            <div className="flex gap-3 pt-1">
+            <div className="flex gap-3">
               <button
                 onClick={handleTest}
-                disabled={testing || !newUrl.trim()}
-                className="px-4 py-2 border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                disabled={testing || !privateUrl.trim()}
+                className={btnSecondary}
               >
                 {testing ? (
                   <>
@@ -204,15 +379,13 @@ export default function SettingsPage() {
                     </svg>
                     Testing...
                   </>
-                ) : (
-                  'Test Connection'
-                )}
+                ) : 'Test Connection'}
               </button>
 
               <button
-                onClick={handleSave}
-                disabled={!newName.trim() || !newUrl.trim()}
-                className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+                onClick={handleSavePrivateTab}
+                disabled={!privateName.trim() || !privateUrl.trim()}
+                className={btnPrimary}
               >
                 Save Tab
               </button>
@@ -220,32 +393,34 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* ── SECTION B: Saved tabs list ── */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h2 className="text-base font-semibold text-gray-900 mb-4">
-            Saved Tabs
-            <span className="ml-2 text-sm font-normal text-gray-400">
-              ({tabs.length} tab{tabs.length !== 1 ? 's' : ''})
-            </span>
-          </h2>
+        {/* ══ SAVED TABS LIST ══ */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
+            <h2 className="text-sm font-semibold text-gray-900">
+              Saved Tabs
+              <span className="ml-2 text-sm font-normal text-gray-400">
+                ({tabs.length} tab{tabs.length !== 1 ? 's' : ''} — all load together on Enquiries)
+              </span>
+            </h2>
+          </div>
 
           {tabs.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-8">
-              No tabs saved yet. Add your first tab above.
-            </p>
+            <div className="px-6 py-12 text-center">
+              <p className="text-sm text-gray-400">
+                No tabs saved yet. Add a sheet above to get started.
+              </p>
+            </div>
           ) : (
-            <div className="space-y-3">
+            <div className="divide-y divide-gray-100">
               {tabs.map((tab, index) => (
                 <div
                   key={tab.id}
-                  className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
+                  className="flex items-center gap-3 px-6 py-4 hover:bg-gray-50 transition-colors"
                 >
-                  {/* Index badge */}
-                  <span className="flex-shrink-0 w-7 h-7 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center">
+                  <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center flex-shrink-0">
                     {index + 1}
                   </span>
 
-                  {/* Name + URL */}
                   <div className="flex-1 min-w-0">
                     {renamingId === tab.id ? (
                       <div className="flex items-center gap-2">
@@ -257,7 +432,7 @@ export default function SettingsPage() {
                             if (e.key === 'Enter') handleRenameConfirm(tab);
                             if (e.key === 'Escape') setRenamingId(null);
                           }}
-                          className="px-2 py-1 border border-blue-400 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-48"
+                          className="px-2 py-1 border border-blue-400 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-44"
                           autoFocus
                         />
                         <button
@@ -268,7 +443,7 @@ export default function SettingsPage() {
                         </button>
                         <button
                           onClick={() => setRenamingId(null)}
-                          className="text-xs text-gray-500 hover:text-gray-700"
+                          className="text-xs text-gray-400 hover:text-gray-600"
                         >
                           Cancel
                         </button>
@@ -278,15 +453,15 @@ export default function SettingsPage() {
                         {tab.name}
                       </p>
                     )}
-                    <p className="text-xs text-gray-400 truncate mt-0.5">
-                      {tab.url}
-                    </p>
+                    <p className="text-xs text-gray-400 truncate mt-0.5">{tab.url}</p>
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-2 flex-shrink-0">
+                  <div className="flex items-center gap-1 flex-shrink-0">
                     <button
-                      onClick={() => handleRenameStart(tab)}
+                      onClick={() => {
+                        setRenamingId(tab.id);
+                        setRenameValue(tab.name);
+                      }}
                       className="text-xs text-gray-500 hover:text-gray-800 px-2 py-1 rounded hover:bg-gray-200 transition-colors"
                     >
                       Rename
