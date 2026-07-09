@@ -1,86 +1,82 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { filterLeads } from "@/lib/filterLeads";
 import { useFilterStore } from "@/store/filterStore";
-import { fetchLeadsFromMultipleTabs } from "@/lib/services/fetchLeads";
-import { getSheetTabs, type SheetTab } from "@/lib/config";
 import FilterBar from "@/components/FilterBar";
 import StatsStrip from "@/components/StatsStrip";
 import LeadsTable from "@/components/LeadsTable";
-import TabSelector from "@/components/TabSelector";
 import type { Lead } from "@/lib/parseLeads";
+import { useProjectStore } from "@/store/projectStore";
+import type { GoogleSheet, SheetLead } from "@/types/supabase";
+
+function toUiLead(lead: SheetLead, sheet: GoogleSheet | undefined): Lead {
+  const createdAt = lead.created_at ? new Date(lead.created_at) : null;
+
+  return {
+    name: lead.name ?? "Unknown",
+    email: lead.email ?? "",
+    phone: lead.phone ?? "",
+    leadSource: sheet?.name ?? lead.company ?? "Sheet",
+    leadStatus: lead.status ?? "new",
+    tags: [],
+    lastMessage: "",
+    lastMessageDate: createdAt,
+    notes: lead.notes ?? "",
+    platform: "Supabase",
+    uniqueKey: String(lead.id),
+  };
+}
 
 export default function EnquiriesPage() {
-  const [leads, setLeads] = useState<Lead[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastFetchedAt, setLastFetchedAt] = useState<string | null>(null);
+  const {
+    projects,
+    sheets,
+    leads: supabaseLeads,
+    loading,
+    error,
+    fetchProjects,
+    fetchSheetsForProject,
+    fetchLeadsForProject,
+    fetchLeadsForSheet,
+  } = useProjectStore();
 
-  // Tab selection state
-  const [availableTabs, setAvailableTabs] = useState<SheetTab[]>([]);
-  const [selectedTabIds, setSelectedTabIds] = useState<string[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [selectedSheetId, setSelectedSheetId] = useState<number | "all">("all");
 
   const filterState = useFilterStore();
 
-  // Load available tabs on mount
   useEffect(() => {
-    const tabs = getSheetTabs();
-    setAvailableTabs(tabs);
-  }, []);
+    fetchProjects();
+  }, [fetchProjects]);
 
-  // Fetch leads from Google Sheet
-  const fetchLeadsData = async () => {
-    setLoading(true);
-    setError(null);
-
-    const allTabs = getSheetTabs();
-    
-    if (allTabs.length === 0) {
-      setError('No sheet tabs configured. Go to Settings to add one.');
-      setLoading(false);
-      return;
-    }
-
-    // Filter tabs based on selection
-    const tabsToFetch = selectedTabIds.length === 0 
-      ? allTabs 
-      : allTabs.filter(tab => selectedTabIds.includes(tab.id));
-
-    try {
-      const result = await fetchLeadsFromMultipleTabs(tabsToFetch);
-      
-      if (result.error) {
-        setError(result.error);
-        toast.error(result.error);
-      } else {
-        setLeads(result.leads);
-        setLastFetchedAt(result.fetchedAt);
-        toast.success(`✓ Loaded ${result.total} leads from ${tabsToFetch.length} tab${tabsToFetch.length > 1 ? 's' : ''}`);
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load leads';
-      setError(message);
-      toast.error(message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Load leads on mount
   useEffect(() => {
-    fetchLeadsData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (projects.length === 0) return;
+    if (selectedProjectId !== null) return;
 
-  // Re-fetch when tab selection changes
+    setSelectedProjectId(projects[0].id);
+  }, [projects, selectedProjectId]);
+
   useEffect(() => {
-    if (availableTabs.length > 0) {
-      fetchLeadsData();
+    if (selectedProjectId === null) return;
+    void fetchSheetsForProject(selectedProjectId);
+    void fetchLeadsForProject(selectedProjectId);
+    setSelectedSheetId("all");
+  }, [fetchLeadsForProject, fetchSheetsForProject, selectedProjectId]);
+
+  useEffect(() => {
+    if (selectedProjectId === null) return;
+    if (selectedSheetId === "all") {
+      void fetchLeadsForProject(selectedProjectId);
+    } else {
+      void fetchLeadsForSheet(selectedSheetId);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedTabIds]);
+  }, [fetchLeadsForProject, fetchLeadsForSheet, selectedProjectId, selectedSheetId]);
+
+  const leads = useMemo(() => {
+    return supabaseLeads.map((lead) => toUiLead(lead, sheets.find((s) => s.id === lead.sheet_id)));
+  }, [sheets, supabaseLeads]);
 
   // Apply filters
   const filteredLeads = useMemo(() => {
@@ -111,14 +107,22 @@ export default function EnquiriesPage() {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Enquiries</h1>
             <p className="text-sm text-gray-500 mt-1">
-              {lastFetchedAt 
-                ? `Last updated: ${new Date(lastFetchedAt).toLocaleString()}`
-                : 'No data loaded yet'}
+              {selectedProjectId ? "Loaded from Supabase" : "Select a project"}
             </p>
           </div>
           
           <button
-            onClick={fetchLeadsData}
+            onClick={() => {
+              if (selectedProjectId === null) {
+                toast.error("Select a project first");
+                return;
+              }
+              if (selectedSheetId === "all") {
+                void fetchLeadsForProject(selectedProjectId);
+              } else {
+                void fetchLeadsForSheet(selectedSheetId);
+              }
+            }}
             disabled={loading}
             className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
@@ -166,26 +170,39 @@ export default function EnquiriesPage() {
 
       {/* Filters */}
       <div className="max-w-7xl mx-auto mb-6">
-        {/* Tab Selector - Show if multiple tabs are configured */}
-        {availableTabs.length > 1 && (
-          <div className="mb-4 bg-white border border-gray-200 rounded-lg shadow-sm p-4">
-            <div className="flex items-center gap-3">
-              <label className="text-sm font-semibold text-gray-700">
-                Filter by Tabs:
-              </label>
-              <TabSelector
-                availableTabs={availableTabs}
-                selectedTabIds={selectedTabIds}
-                onChange={setSelectedTabIds}
-              />
-              <p className="text-xs text-gray-500">
-                {selectedTabIds.length === 0 
-                  ? '✓ Loading from all tabs' 
-                  : `Loading from ${selectedTabIds.length} selected tab${selectedTabIds.length > 1 ? 's' : ''}`}
-              </p>
-            </div>
+        <div className="mb-4 bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="text-sm font-semibold text-gray-700">Project:</label>
+            <select
+              value={selectedProjectId ?? ""}
+              onChange={(e) => setSelectedProjectId(Number(e.target.value))}
+              className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+
+            <label className="text-sm font-semibold text-gray-700">Sheet:</label>
+            <select
+              value={selectedSheetId === "all" ? "all" : String(selectedSheetId)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setSelectedSheetId(value === "all" ? "all" : Number(value));
+              }}
+              className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="all">All sheets</option>
+              {sheets.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} ({s.sheet_name})
+                </option>
+              ))}
+            </select>
           </div>
-        )}
+        </div>
 
         <FilterBar 
           totalLeads={leads.length}
@@ -211,7 +228,7 @@ export default function EnquiriesPage() {
             <h3 className="text-lg font-semibold text-gray-900 mb-2">No leads found</h3>
             <p className="text-gray-600">
               {leads.length === 0 
-                ? 'Load leads from your Google Sheet using the Refresh button above.'
+                ? 'No leads found in Supabase for the current selection.'
                 : 'Try adjusting your filters to see more results.'}
             </p>
           </div>

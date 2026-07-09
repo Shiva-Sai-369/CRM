@@ -5,6 +5,7 @@ import { sortLeads, type SortColumn, type SortDirection } from "@/lib/sortLeads"
 import { exportLeadsToCSV } from "@/lib/exportCsv";
 import { ROWS_PER_PAGE } from "@/lib/constants";
 import { useFilterStore } from "@/store/filterStore";
+import { useProjectStore } from "@/store/projectStore";
 import type { Lead } from "@/lib/parseLeads";
 import LeadRow from "./LeadRow";
 
@@ -14,6 +15,9 @@ interface LeadsTableProps {
 }
 
 export default function LeadsTable({ leads, loading }: LeadsTableProps) {
+  const updateLeadStatus = useProjectStore((state) => state.updateLeadStatus);
+  const updateLeadNotes = useProjectStore((state) => state.updateLeadNotes);
+
   const [sortColumn, setSortColumn] = useState<SortColumn>("lastMessageDate");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [currentPage, setCurrentPage] = useState(1);
@@ -44,6 +48,22 @@ export default function LeadsTable({ leads, loading }: LeadsTableProps) {
         lead.uniqueKey === leadId ? { ...lead, leadStatus: newStatus } : lead
       )
     );
+
+    const numericId = Number(leadId);
+    if (Number.isFinite(numericId)) {
+      void updateLeadStatus(numericId, newStatus);
+    }
+  };
+
+  const handleNotesSave = (leadId: string, notes: string) => {
+    setLocalLeads((prevLeads) =>
+      prevLeads.map((lead) => (lead.uniqueKey === leadId ? { ...lead, notes } : lead))
+    );
+
+    const numericId = Number(leadId);
+    if (Number.isFinite(numericId)) {
+      void updateLeadNotes(numericId, notes);
+    }
   };
 
   const handleSelectAll = (checked: boolean) => {
@@ -349,6 +369,7 @@ export default function LeadsTable({ leads, loading }: LeadsTableProps) {
                 onSelect={(checked) => handleSelectLead(lead.uniqueKey, checked)}
                 availableStatuses={availableStatuses}
                 onStatusChange={handleStatusChange}
+                onNotesSave={handleNotesSave}
               />
             ))}
           </tbody>

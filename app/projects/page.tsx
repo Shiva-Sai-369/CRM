@@ -2,32 +2,32 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useProjectStore, getProjectCounts, initializeProjectStore } from '@/store/projectStore';
+import { useProjectStore } from '@/store/projectStore';
 import toast from 'react-hot-toast';
 
 export default function ProjectsPage() {
   const router = useRouter();
-  const { projects, addProject, deleteProject } = useProjectStore();
+  const { projects, loading, error, fetchProjects, createProject } = useProjectStore();
   
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectDescription, setNewProjectDescription] = useState('');
 
-  // Run migration on mount
   useEffect(() => {
-    initializeProjectStore();
-  }, []);
+    fetchProjects();
+  }, [fetchProjects]);
 
-  const handleCreateProject = () => {
+  const handleCreateProject = async () => {
     if (!newProjectName.trim()) {
       toast.error('Please enter a project name');
       return;
     }
 
-    const project = addProject({
-      name: newProjectName.trim(),
-      description: newProjectDescription.trim() || undefined,
-    });
+    const project = await createProject(newProjectName.trim(), newProjectDescription.trim() || undefined);
+    if (!project) {
+      toast.error('Failed to create project');
+      return;
+    }
 
     toast.success(`Project "${project.name}" created`);
     setShowNewProjectModal(false);
@@ -35,16 +35,7 @@ export default function ProjectsPage() {
     setNewProjectDescription('');
   };
 
-  const handleDeleteProject = (id: string, name: string) => {
-    if (!confirm(`Delete project "${name}"? This will also delete all sheets and tabs.`)) {
-      return;
-    }
-
-    deleteProject(id);
-    toast.success(`Project "${name}" deleted`);
-  };
-
-  const handleProjectClick = (id: string) => {
+  const handleProjectClick = (id: number) => {
     router.push(`/projects/${id}`);
   };
 
@@ -71,7 +62,18 @@ export default function ProjectsPage() {
         </div>
 
         {/* Projects Grid */}
-        {projects.length === 0 ? (
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800">
+            {error}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading projects...</p>
+          </div>
+        ) : projects.length === 0 ? (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
             <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
@@ -90,7 +92,6 @@ export default function ProjectsPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {projects.map((project) => {
-              const counts = getProjectCounts(project.id);
               return (
                 <div
                   key={project.id}
@@ -111,18 +112,6 @@ export default function ProjectsPage() {
                           </h3>
                         </div>
                       </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteProject(project.id, project.name);
-                        }}
-                        className="text-gray-400 hover:text-red-600 transition-colors p-1"
-                        title="Delete project"
-                      >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
                     </div>
 
                     {project.description && (
@@ -131,24 +120,9 @@ export default function ProjectsPage() {
                       </p>
                     )}
 
-                    <div className="flex items-center gap-4 text-sm">
-                      <div className="flex items-center gap-1.5 text-gray-600">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <span>{counts.sheets} sheet{counts.sheets !== 1 ? 's' : ''}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-gray-600">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                        </svg>
-                        <span>{counts.tabs} tab{counts.tabs !== 1 ? 's' : ''}</span>
-                      </div>
-                    </div>
-
                     <div className="mt-4 pt-4 border-t border-gray-100">
                       <p className="text-xs text-gray-400">
-                        Created {new Date(project.createdAt).toLocaleDateString()}
+                        Created {project.created_at ? new Date(project.created_at).toLocaleDateString() : '—'}
                       </p>
                     </div>
                   </div>

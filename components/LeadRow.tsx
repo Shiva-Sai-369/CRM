@@ -15,9 +15,19 @@ interface LeadRowProps {
   onSelect: (checked: boolean) => void;
   availableStatuses: string[];
   onStatusChange: (leadId: string, newStatus: string) => void;
+  onNotesSave: (leadId: string, notes: string) => void;
 }
 
-export default function LeadRow({ lead, isExpanded, isSelected, onToggleExpand, onSelect, availableStatuses, onStatusChange }: LeadRowProps) {
+export default function LeadRow({
+  lead,
+  isExpanded,
+  isSelected,
+  onToggleExpand,
+  onSelect,
+  availableStatuses,
+  onStatusChange,
+  onNotesSave,
+}: LeadRowProps) {
   const [editedNotes, setEditedNotes] = useState(lead.notes);
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
@@ -34,7 +44,7 @@ export default function LeadRow({ lead, isExpanded, isSelected, onToggleExpand, 
   };
 
   const handleSaveNotes = () => {
-    lead.notes = editedNotes;
+    onNotesSave(lead.uniqueKey, editedNotes);
     setIsEditingNotes(false);
   };
 
