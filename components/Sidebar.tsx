@@ -1,7 +1,16 @@
 "use client";
 
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import toast from "react-hot-toast";
+import { useTaskStore } from "@/store/taskStore";
+import {
+  formatTaskReminderSummary,
+  getTaskReminderCandidates,
+  getTaskReminderKey,
+  getTasksDueTodayOrOverdueCount,
+} from "@/lib/taskNotifications";
 
 const navigation = [
   {
@@ -10,6 +19,15 @@ const navigation = [
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      </svg>
+    ),
+  },
+  {
+    name: "Tasks",
+    href: "/tasks",
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5-6H4a2 2 0 00-2 2v14a2 2 0 002 2h16a2 2 0 002-2V4a2 2 0 00-2-2z" />
       </svg>
     ),
   },
@@ -36,6 +54,67 @@ const navigation = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const tasks = useTaskStore((state) => state.tasks);
+  const [currentTime, setCurrentTime] = useState(() => new Date());
+  const notifiedReminderKeysRef = useRef<Set<string>>(new Set());
+
+  const dueTodayOrOverdueCount = useMemo(
+    () => getTasksDueTodayOrOverdueCount(tasks, currentTime),
+    [currentTime, tasks]
+  );
+
+  useEffect(() => {
+    const syncTaskReminders = () => {
+      const reminderCandidates = getTaskReminderCandidates(tasks, currentTime);
+      const candidateKeys = new Set(reminderCandidates.map((task) => getTaskReminderKey(task)));
+
+      notifiedReminderKeysRef.current.forEach((key) => {
+        if (!candidateKeys.has(key)) {
+          notifiedReminderKeysRef.current.delete(key);
+        }
+      });
+
+      const newReminders = reminderCandidates.filter((task) => {
+        const key = getTaskReminderKey(task);
+        if (notifiedReminderKeysRef.current.has(key)) {
+          return false;
+        }
+
+        notifiedReminderKeysRef.current.add(key);
+        return true;
+      });
+
+      if (newReminders.length === 0) {
+        return;
+      }
+
+      const overdueCount = newReminders.filter((task) => new Date(task.dueDate).getTime() < Date.now()).length;
+      const dueSoonCount = newReminders.length - overdueCount;
+      const summary = formatTaskReminderSummary(newReminders);
+
+      toast(
+        overdueCount > 0 && dueSoonCount > 0
+          ? `${overdueCount} overdue and ${dueSoonCount} due soon: ${summary}`
+          : overdueCount > 0
+            ? `${overdueCount} task${overdueCount === 1 ? '' : 's'} overdue: ${summary}`
+            : `${dueSoonCount} task${dueSoonCount === 1 ? '' : 's'} due within the next hour: ${summary}`,
+        { icon: '!' }
+      );
+    };
+
+    syncTaskReminders();
+    const intervalId = window.setInterval(syncTaskReminders, 60_000);
+
+    return () => window.clearInterval(intervalId);
+  }, [currentTime, tasks]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setCurrentTime(new Date());
+    }, 60_000);
+
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   return (
     <div className="flex flex-col w-64 bg-gray-900 border-r border-gray-800 text-white h-screen">
@@ -66,7 +145,14 @@ export default function Sidebar() {
               <div className={`${isActive ? "text-white" : "text-gray-400"}`}>
                 {item.icon}
               </div>
-              <span className="font-medium">{item.name}</span>
+              <span className="flex flex-1 items-center justify-between gap-3 font-medium">
+                <span>{item.name}</span>
+                {item.name === "Tasks" && dueTodayOrOverdueCount > 0 && (
+                  <span className="inline-flex min-w-6 items-center justify-center rounded-full bg-red-500 px-2 py-0.5 text-[11px] font-semibold text-white">
+                    {dueTodayOrOverdueCount}
+                  </span>
+                )}
+              </span>
             </Link>
           );
         })}
