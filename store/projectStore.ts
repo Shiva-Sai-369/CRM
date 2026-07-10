@@ -13,13 +13,17 @@ interface ProjectStoreState {
   fetchProjects: () => Promise<void>;
   createProject: (name: string, description?: string) => Promise<Project | null>;
 
-  fetchSheetsForProject: (projectId: number) => Promise<void>;
+  fetchSheetsForProject: (projectId: number | "all") => Promise<void>;
 
-  fetchLeadsForProject: (projectId: number) => Promise<void>;
+  fetchLeadsForProject: (projectId: number | "all") => Promise<void>;
   fetchLeadsForSheet: (sheetId: number) => Promise<void>;
 
   updateLeadStatus: (leadId: number, status: string) => Promise<void>;
   updateLeadNotes: (leadId: number, notes: string) => Promise<void>;
+
+  addLead: (lead: SheetLead) => void;
+  updateLead: (lead: SheetLead) => void;
+  deleteLead: (leadId: number) => void;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -95,11 +99,11 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const supabase = getSupabaseClient();
-      const { data, error } = await supabase
-        .from("google_sheets")
-        .select("*")
-        .eq("project_id", projectId)
-        .order("created_at", { ascending: false });
+      let query = supabase.from("google_sheets").select("*");
+      if (projectId !== "all") {
+        query = query.eq("project_id", projectId);
+      }
+      const { data, error } = await query.order("created_at", { ascending: false });
 
       if (error) {
         throw error;
@@ -115,10 +119,11 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const supabase = getSupabaseClient();
-      const { data: sheetRows, error: sheetErr } = await supabase
-        .from("google_sheets")
-        .select("id")
-        .eq("project_id", projectId);
+      let query = supabase.from("google_sheets").select("id");
+      if (projectId !== "all") {
+        query = query.eq("project_id", projectId);
+      }
+      const { data: sheetRows, error: sheetErr } = await query;
 
       if (sheetErr) {
         throw sheetErr;
@@ -212,5 +217,28 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
     } catch (err) {
       set({ error: getErrorMessage(err) });
     }
+  },
+
+  addLead: (lead) => {
+    set((state) => {
+      if (state.leads.some((l) => l.id === lead.id)) {
+        return state;
+      }
+      return {
+        leads: [lead, ...state.leads],
+      };
+    });
+  },
+
+  updateLead: (lead) => {
+    set((state) => ({
+      leads: state.leads.map((l) => (l.id === lead.id ? lead : l)),
+    }));
+  },
+
+  deleteLead: (leadId) => {
+    set((state) => ({
+      leads: state.leads.filter((l) => l.id !== leadId),
+    }));
   },
 }));

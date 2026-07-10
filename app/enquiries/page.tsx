@@ -10,6 +10,7 @@ import LeadsTable from "@/components/LeadsTable";
 import type { Lead } from "@/lib/parseLeads";
 import { useProjectStore } from "@/store/projectStore";
 import type { GoogleSheet, SheetLead } from "@/types/supabase";
+import { getSupabaseClient } from "@/lib/supabase";
 
 function toUiLead(lead: SheetLead, sheet: GoogleSheet | undefined): Lead {
   const createdAt = lead.created_at ? new Date(lead.created_at) : null;
@@ -40,12 +41,22 @@ export default function EnquiriesPage() {
     fetchSheetsForProject,
     fetchLeadsForProject,
     fetchLeadsForSheet,
+    addLead,
+    updateLead,
+    deleteLead,
   } = useProjectStore();
 
-  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | "all" | null>(null);
   const [selectedSheetId, setSelectedSheetId] = useState<number | "all">("all");
+  const [isLive, setIsLive] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<string>("");
 
   const filterState = useFilterStore();
+
+  const updateLastUpdatedTime = () => {
+    const now = new Date();
+    setLastUpdated(now.toLocaleTimeString());
+  };
 
   useEffect(() => {
     fetchProjects();
@@ -61,22 +72,85 @@ export default function EnquiriesPage() {
   useEffect(() => {
     if (selectedProjectId === null) return;
     void fetchSheetsForProject(selectedProjectId);
-    void fetchLeadsForProject(selectedProjectId);
+    void fetchLeadsForProject(selectedProjectId).then(updateLastUpdatedTime);
     setSelectedSheetId("all");
   }, [fetchLeadsForProject, fetchSheetsForProject, selectedProjectId]);
 
   useEffect(() => {
     if (selectedProjectId === null) return;
     if (selectedSheetId === "all") {
-      void fetchLeadsForProject(selectedProjectId);
+      void fetchLeadsForProject(selectedProjectId).then(updateLastUpdatedTime);
     } else {
-      void fetchLeadsForSheet(selectedSheetId);
+      void fetchLeadsForSheet(selectedSheetId).then(updateLastUpdatedTime);
     }
   }, [fetchLeadsForProject, fetchLeadsForSheet, selectedProjectId, selectedSheetId]);
 
+  // Subscribe to Supabase Realtime changes
+  useEffect(() => {
+    if (selectedProjectId === null) return;
+
+    const supabase = getSupabaseClient();
+    const channel = supabase
+      .channel("sheet_leads_changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "sheet_leads" },
+        (payload) => {
+          const { eventType, new: newRecord, old: oldRecord } = payload;
+
+          if (eventType === "INSERT") {
+            const lead = newRecord as SheetLead;
+            if (!lead.sheet_id) return;
+
+            const isAllProjects = selectedProjectId === "all";
+            const belongsToCurrentProject = sheets.some((s) => s.id === lead.sheet_id);
+
+            // Add the lead if we are in "All Projects" scope, or if the lead belongs to the current project
+            if (isAllProjects || belongsToCurrentProject) {
+              addLead(lead);
+              updateLastUpdatedTime();
+            }
+          } else if (eventType === "UPDATE") {
+            const lead = newRecord as SheetLead;
+            updateLead(lead);
+            updateLastUpdatedTime();
+          } else if (eventType === "DELETE") {
+            const leadId = (oldRecord as { id: number }).id;
+            deleteLead(leadId);
+            updateLastUpdatedTime();
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          setIsLive(true);
+        } else {
+          setIsLive(false);
+        }
+      });
+
+    return () => {
+      void supabase.removeChannel(channel);
+      setIsLive(false);
+    };
+  }, [selectedProjectId, selectedSheetId, sheets, addLead, updateLead, deleteLead]);
+
   const leads = useMemo(() => {
-    return supabaseLeads.map((lead) => toUiLead(lead, sheets.find((s) => s.id === lead.sheet_id)));
-  }, [sheets, supabaseLeads]);
+    return supabaseLeads
+      .filter((lead) => {
+        // If not All Projects scope, filter out leads not belonging to the current project's sheets
+        if (selectedProjectId !== "all") {
+          const belongsToCurrentProject = sheets.some((s) => s.id === lead.sheet_id);
+          if (!belongsToCurrentProject) return false;
+        }
+        // If a specific sheet filter is active, filter out other sheets
+        if (selectedSheetId !== "all" && lead.sheet_id !== selectedSheetId) {
+          return false;
+        }
+        return true;
+      })
+      .map((lead) => toUiLead(lead, sheets.find((s) => s.id === lead.sheet_id)));
+  }, [sheets, supabaseLeads, selectedProjectId, selectedSheetId]);
 
   // Apply filters
   const filteredLeads = useMemo(() => {
@@ -85,19 +159,29 @@ export default function EnquiriesPage() {
 
   // Extract unique values for filters
   const availableLeadSources = useMemo(() => {
-    const sources = leads.map(l => l.leadSource).filter(Boolean);
+    const sources = leads.map((l) => l.leadSource).filter(Boolean);
     return Array.from(new Set(sources));
   }, [leads]);
 
   const availableLeadStatuses = useMemo(() => {
-    const statuses = leads.map(l => l.leadStatus).filter(Boolean);
+    const statuses = leads.map((l) => l.leadStatus).filter(Boolean);
     return Array.from(new Set(statuses));
   }, [leads]);
 
   const availableTags = useMemo(() => {
-    const allTags = leads.flatMap(l => l.tags || []);
+    const allTags = leads.flatMap((l) => l.tags || []);
     return Array.from(new Set(allTags));
   }, [leads]);
+
+  // Determine total leads count based on requirement:
+  // "When a new lead comes in via realtime and it doesn't match the currently selected Project/Sheet filter,
+  // don't add it to the visible table, but do update the total count if we're on 'All Projects' scope."
+  const totalLeadsCount = useMemo(() => {
+    if (selectedProjectId === "all") {
+      return supabaseLeads.length;
+    }
+    return leads.length;
+  }, [selectedProjectId, supabaseLeads.length, leads.length]);
 
   return (
     <div className="p-6">
@@ -105,23 +189,43 @@ export default function EnquiriesPage() {
       <div className="max-w-7xl mx-auto mb-6 bg-white border-b border-gray-200 px-6 py-4 rounded-lg shadow-sm">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Enquiries</h1>
-            <p className="text-sm text-gray-500 mt-1">
-              {selectedProjectId ? "Loaded from Supabase" : "Select a project"}
-            </p>
+            <h1 className="text-2xl font-bold text-gray-900 font-sans">Enquiries</h1>
+            <div className="flex flex-wrap items-center gap-2 mt-1 select-none">
+              <span className="text-sm text-gray-500">
+                {selectedProjectId ? "Loaded from Supabase" : "Select a project"}
+              </span>
+              {lastUpdated && (
+                <>
+                  <span className="text-gray-300">|</span>
+                  <span className="text-sm text-gray-500 font-mono">Last updated: {lastUpdated}</span>
+                </>
+              )}
+              {isLive && (
+                <>
+                  <span className="text-gray-300">|</span>
+                  <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green-50 border border-green-200 animate-pulse">
+                    <span className="h-2 w-2 rounded-full bg-green-500" />
+                    <span className="text-xs font-semibold text-green-600 uppercase tracking-wider">Live</span>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
-          
+
           <button
             onClick={() => {
               if (selectedProjectId === null) {
                 toast.error("Select a project first");
                 return;
               }
-              if (selectedSheetId === "all") {
-                void fetchLeadsForProject(selectedProjectId);
-              } else {
-                void fetchLeadsForSheet(selectedSheetId);
-              }
+              const promise =
+                selectedSheetId === "all"
+                  ? fetchLeadsForProject(selectedProjectId)
+                  : fetchLeadsForSheet(selectedSheetId);
+              void promise.then(() => {
+                updateLastUpdatedTime();
+                toast.success("Leads refreshed successfully");
+              });
             }}
             disabled={loading}
             className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
@@ -175,9 +279,13 @@ export default function EnquiriesPage() {
             <label className="text-sm font-semibold text-gray-700">Project:</label>
             <select
               value={selectedProjectId ?? ""}
-              onChange={(e) => setSelectedProjectId(Number(e.target.value))}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedProjectId(val === "all" ? "all" : Number(val));
+              }}
               className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
+              <option value="all">All Projects</option>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
@@ -204,8 +312,8 @@ export default function EnquiriesPage() {
           </div>
         </div>
 
-        <FilterBar 
-          totalLeads={leads.length}
+        <FilterBar
+          totalLeads={totalLeadsCount}
           filteredCount={filteredLeads.length}
           availableLeadSources={availableLeadSources}
           availableLeadStatuses={availableLeadStatuses}
@@ -227,9 +335,9 @@ export default function EnquiriesPage() {
             </svg>
             <h3 className="text-lg font-semibold text-gray-900 mb-2">No leads found</h3>
             <p className="text-gray-600">
-              {leads.length === 0 
-                ? 'No leads found in Supabase for the current selection.'
-                : 'Try adjusting your filters to see more results.'}
+              {leads.length === 0
+                ? "No leads found in Supabase for the current selection."
+                : "Try adjusting your filters to see more results."}
             </p>
           </div>
         ) : (
