@@ -7,6 +7,7 @@ import { useFilterStore } from "@/store/filterStore";
 import FilterBar from "@/components/FilterBar";
 import StatsStrip from "@/components/StatsStrip";
 import LeadsTable from "@/components/LeadsTable";
+import AddLeadModal from "@/components/AddLeadModal";
 import type { Lead } from "@/lib/parseLeads";
 import { useProjectStore } from "@/store/projectStore";
 import type { GoogleSheet, SheetLead } from "@/types/supabase";
@@ -14,6 +15,10 @@ import { getSupabaseClient } from "@/lib/supabase";
 
 function toUiLead(lead: SheetLead, sheet: GoogleSheet | undefined): Lead {
   const createdAt = lead.created_at ? new Date(lead.created_at) : null;
+  const rawObj = (lead.raw_data && typeof lead.raw_data === "object" && !Array.isArray(lead.raw_data))
+    ? (lead.raw_data as Record<string, any>)
+    : {};
+  const platform = rawObj.platform || rawObj.Platform || rawObj.Platform_Name || (lead.sheet_id ? "Google Sheets" : "Manual");
 
   return {
     name: lead.name ?? "Unknown",
@@ -25,8 +30,9 @@ function toUiLead(lead: SheetLead, sheet: GoogleSheet | undefined): Lead {
     lastMessage: "",
     lastMessageDate: createdAt,
     notes: lead.notes ?? "",
-    platform: "Supabase",
+    platform: platform,
     uniqueKey: String(lead.id),
+    company: lead.company ?? "",
   };
 }
 
@@ -50,6 +56,7 @@ export default function EnquiriesPage() {
   const [selectedSheetId, setSelectedSheetId] = useState<number | "all">("all");
   const [isLive, setIsLive] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string>("");
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
   const filterState = useFilterStore();
 
@@ -341,9 +348,19 @@ export default function EnquiriesPage() {
             </p>
           </div>
         ) : (
-          <LeadsTable leads={filteredLeads} loading={loading} />
+          <LeadsTable
+            leads={filteredLeads}
+            loading={loading}
+            onAddLeadClick={() => setIsAddModalOpen(true)}
+          />
         )}
       </div>
+
+      <AddLeadModal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        selectedProjectId={selectedProjectId}
+      />
     </div>
   );
 }

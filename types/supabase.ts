@@ -45,6 +45,13 @@ export interface SheetLead {
   updated_at: string | null;
 }
 
+export interface LeadNote {
+  id: number;
+  lead_id: number;
+  content: string;
+  created_at: string;
+}
+
 export interface NotificationSetting {
   id: number;
   sheet_id: number | null;
@@ -107,6 +114,22 @@ export type Database = {
         };
         Update: Partial<SheetLead> & { id?: number };
         Relationships: [];
+      };
+      lead_notes: {
+        Row: LeadNote;
+        Insert: Omit<LeadNote, "id" | "created_at"> & {
+          id?: number;
+          created_at?: string;
+        };
+        Update: Partial<LeadNote> & { id?: number };
+        Relationships: [
+          {
+            foreignKeyName: "lead_notes_lead_id_fkey";
+            columns: ["lead_id"];
+            referencedRelation: "sheet_leads";
+            referencedColumns: ["id"];
+          }
+        ];
       };
       notification_settings: {
         Row: NotificationSetting;

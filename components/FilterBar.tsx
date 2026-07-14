@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useFilterStore } from "@/store/filterStore";
 import MultiSelect from "./MultiSelect";
+import { Trash2, RefreshCw, BarChart2 } from "lucide-react";
 
 interface FilterBarProps {
   totalLeads: number;
@@ -140,31 +141,33 @@ export default function FilterBar({
           <div className="flex gap-2 flex-wrap">
             <button
               onClick={handleClearFilters}
-              className="px-4 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-semibold"
+              className="px-4 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors font-semibold flex items-center gap-1.5"
             >
-              🗑️ Clear Filters
+              <Trash2 className="w-4 h-4" /> Clear Filters
             </button>
             
             {onSyncFromSheet && (
               <button
                 onClick={onSyncFromSheet}
                 disabled={syncing}
-                className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
               >
                 {syncing ? (
                   <>
-                    <span className="inline-block animate-spin mr-2">⟳</span>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
                     Syncing...
                   </>
                 ) : (
-                  "🔄 Sync from Sheet"
+                  <>
+                    <RefreshCw className="w-4 h-4" /> Sync from Sheet
+                  </>
                 )}
               </button>
             )}
 
             {connectedSheet && (
-              <div className="px-3 py-2 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
-                <span className="text-green-700 text-sm font-semibold">📊</span>
+              <div className="px-3 py-2 bg-green-50 border border-green-200 rounded-lg flex items-center gap-1.5">
+                <BarChart2 className="w-4 h-4 text-green-700" />
                 <span className="text-sm text-green-700 font-medium">{connectedSheet.displayName}</span>
               </div>
             )}

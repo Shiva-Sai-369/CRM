@@ -16,6 +16,7 @@ export interface Lead {
   notes: string;
   platform: string;
   uniqueKey: string;
+  company?: string;
   // Additional fields from Facebook/Instagram leads
   adName?: string;
   campaignName?: string;

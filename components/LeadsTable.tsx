@@ -8,13 +8,15 @@ import { useFilterStore } from "@/store/filterStore";
 import { useProjectStore } from "@/store/projectStore";
 import type { Lead } from "@/lib/parseLeads";
 import LeadRow from "./LeadRow";
+import { Plus, Download, Trash2 } from "lucide-react";
 
 interface LeadsTableProps {
   leads: Lead[];
   loading: boolean;
+  onAddLeadClick: () => void;
 }
 
-export default function LeadsTable({ leads, loading }: LeadsTableProps) {
+export default function LeadsTable({ leads, loading, onAddLeadClick }: LeadsTableProps) {
   const updateLeadStatus = useProjectStore((state) => state.updateLeadStatus);
   const updateLeadNotes = useProjectStore((state) => state.updateLeadNotes);
 
@@ -295,17 +297,23 @@ export default function LeadsTable({ leads, loading }: LeadsTableProps) {
               </select>
               <button
                 onClick={handleBulkDelete}
-                className="px-3 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 font-semibold"
+                className="px-3 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 font-semibold flex items-center gap-1.5"
               >
-                🗑️ Delete
+                <Trash2 className="w-4 h-4" /> Delete
               </button>
             </>
           )}
           <button
             onClick={handleExport}
-            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors font-semibold"
+            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors font-semibold flex items-center gap-1.5"
           >
-            📥 Export {selectedLeads.size > 0 ? `(${selectedLeads.size})` : 'All'}
+            <Download className="w-4 h-4" /> Export {selectedLeads.size > 0 ? `(${selectedLeads.size})` : 'All'}
+          </button>
+          <button
+            onClick={onAddLeadClick}
+            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors font-semibold flex items-center gap-1.5"
+          >
+            <Plus className="w-4 h-4" /> Add Lead
           </button>
         </div>
       </div>
@@ -350,6 +358,9 @@ export default function LeadsTable({ leads, loading }: LeadsTableProps) {
                 </div>
               </th>
               {renderTableHeader("leadSource", "Form/Source", true)}
+              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-64">
+                Last Note
+              </th>
               {renderTableHeader("lastMessageDate", "Date & Time", true)}
               <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-28">
                 Actions
@@ -369,7 +380,6 @@ export default function LeadsTable({ leads, loading }: LeadsTableProps) {
                 onSelect={(checked) => handleSelectLead(lead.uniqueKey, checked)}
                 availableStatuses={availableStatuses}
                 onStatusChange={handleStatusChange}
-                onNotesSave={handleNotesSave}
               />
             ))}
           </tbody>
