@@ -58,6 +58,7 @@ export default function LeadRow({
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [loadingNotes, setLoadingNotes] = useState(false);
   const [notesError, setNotesError] = useState<string | null>(null);
+  const [addNoteError, setAddNoteError] = useState<string | null>(null);
 
   const [copyStatus, setCopyStatus] = useState("");
 
@@ -155,16 +156,27 @@ export default function LeadRow({
     }
   };
 
-  const handleAddNote = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAddNote = async (e?: React.FormEvent | React.KeyboardEvent | React.MouseEvent) => {
+    if (e) e.preventDefault();
     if (!newNoteText.trim()) return;
 
     setIsAddingNote(true);
+    setAddNoteError(null);
     try {
       await addNoteForLead(Number(lead.uniqueKey), newNoteText.trim());
       setNewNoteText("");
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error("Error adding note details:", err);
+      if (err && typeof err === "object") {
+        console.error("Supabase Error Details:", {
+          message: err.message,
+          details: err.details,
+          hint: err.hint,
+        });
+        setAddNoteError(err.message || "Failed to add note.");
+      } else {
+        setAddNoteError("An unknown error occurred.");
+      }
     } finally {
       setIsAddingNote(false);
     }
@@ -620,27 +632,41 @@ export default function LeadRow({
                     </div>
                   )}
                   
-                  <form onSubmit={handleAddNote} className="flex gap-2">
-                    <textarea
-                      value={newNoteText}
-                      onChange={(e) => setNewNoteText(e.target.value)}
-                      disabled={isAddingNote}
-                      placeholder="Add a note to history..."
-                      rows={1}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none h-10 disabled:opacity-50"
-                    />
-                    <button
-                      type="submit"
-                      disabled={isAddingNote || !newNoteText.trim()}
-                      className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed shrink-0 h-10 flex items-center justify-center"
-                    >
-                      {isAddingNote ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        "Add Note"
-                      )}
-                    </button>
-                  </form>
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <textarea
+                        value={newNoteText}
+                        onChange={(e) => setNewNoteText(e.target.value)}
+                        disabled={isAddingNote}
+                        placeholder="Add a note to history..."
+                        rows={1}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none h-10 disabled:opacity-50 text-gray-900 bg-white"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            void handleAddNote(e);
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={(e) => void handleAddNote(e)}
+                        disabled={isAddingNote || !newNoteText.trim()}
+                        className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed shrink-0 h-10 flex items-center justify-center"
+                      >
+                        {isAddingNote ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          "Add Note"
+                        )}
+                      </button>
+                    </div>
+                    {addNoteError && (
+                      <p className="text-xs text-red-605 font-semibold mt-1">
+                        {addNoteError}
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 {/* Add Task Section */}
