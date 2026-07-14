@@ -147,6 +147,34 @@ export type Database = {
         Update: Partial<NotificationLog> & { id?: number };
         Relationships: [];
       };
+      tasks: {
+        Row: {
+          id: number;
+          title: string;
+          lead_id: number | null;
+          task_type: string;
+          priority: string;
+          status: string;
+          due_date: string;
+          notes: string | null;
+          created_at: string;
+          completed_at: string | null;
+        };
+        Insert: Omit<Database["public"]["Tables"]["tasks"]["Row"], "id" | "created_at" | "completed_at"> & {
+          id?: number;
+          created_at?: string;
+          completed_at?: string | null;
+        };
+        Update: Partial<Database["public"]["Tables"]["tasks"]["Row"]>;
+        Relationships: [
+          {
+            foreignKeyName: "tasks_lead_id_fkey";
+            columns: ["lead_id"];
+            referencedRelation: "sheet_leads";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
     };
     Views: { [_ in never]: never };
     Functions: { [_ in never]: never };

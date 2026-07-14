@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
+import Link from 'next/link';
 import { useTaskStore } from '@/store/taskStore';
 import type { Task, TaskPriority, TaskType } from '@/types/task';
+import { getSupabaseClient } from '@/lib/supabase';
 
 type TaskFormState = {
   title: string;
-  clientName: string;
+  leadId: number | null;
   type: TaskType;
   priority: TaskPriority;
   dueDate: string;
@@ -83,7 +85,7 @@ const TASK_PRIORITY_META: Record<
   },
   medium: {
     label: 'Medium',
-    className: 'bg-amber-50 text-amber-800 border-amber-200',
+    className: 'bg-amber-50 text-amber-850 border-amber-200',
   },
   high: {
     label: 'High',
@@ -150,7 +152,7 @@ function getDefaultTaskFormState(): TaskFormState {
 
   return {
     title: '',
-    clientName: '',
+    leadId: null,
     type: 'follow-up',
     priority: 'medium',
     dueDate: toDateInputValue(defaultDateTime),
@@ -164,7 +166,7 @@ function getTaskFormState(task: Task): TaskFormState {
 
   return {
     title: task.title,
-    clientName: task.clientName,
+    leadId: task.leadId,
     type: task.type,
     priority: task.priority,
     dueDate: toDateInputValue(dueDate),
@@ -223,13 +225,46 @@ interface TaskFormModalProps {
 
 function TaskFormModal({ open, title, submitLabel, initialTask, onClose, onSubmit }: TaskFormModalProps) {
   const [formState, setFormState] = useState<TaskFormState>(getDefaultTaskFormState());
+  const [leads, setLeads] = useState<{ id: number; name: string }[]>([]);
+  const [leadSearch, setLeadSearch] = useState('');
+  const [selectedLeadId, setSelectedLeadId] = useState<number | null>(null);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+  // Load leads for linking options
+  useEffect(() => {
+    async function fetchLeads() {
+      try {
+        const supabase = getSupabaseClient();
+        const { data, error } = await supabase
+          .from('sheet_leads')
+          .select('id, name')
+          .order('name', { ascending: true });
+        if (error) throw error;
+        setLeads((data || []).map(l => ({ id: Number(l.id), name: l.name ?? 'Unknown' })));
+      } catch (err) {
+        console.error('Failed to load leads for link selection:', err);
+      }
+    }
+    if (open) {
+      fetchLeads();
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
       return;
     }
 
-    setFormState(initialTask ? getTaskFormState(initialTask) : getDefaultTaskFormState());
+    if (initialTask) {
+      setFormState(getTaskFormState(initialTask));
+      setSelectedLeadId(initialTask.leadId);
+      setLeadSearch(initialTask.leadName ?? '');
+    } else {
+      setFormState(getDefaultTaskFormState());
+      setSelectedLeadId(null);
+      setLeadSearch('');
+    }
+    setIsDropdownOpen(false);
   }, [initialTask, open]);
 
   useEffect(() => {
@@ -251,11 +286,18 @@ function TaskFormModal({ open, title, submitLabel, initialTask, onClose, onSubmi
   }
 
   const fieldClass =
-    'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white';
+    'w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none bg-white text-gray-950';
+
+  const filteredLeads = leadSearch.trim()
+    ? leads.filter(l => l.name.toLowerCase().includes(leadSearch.toLowerCase()))
+    : leads;
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    onSubmit(formState);
+    onSubmit({
+      ...formState,
+      leadId: selectedLeadId,
+    });
   };
 
   return (
@@ -288,29 +330,69 @@ function TaskFormModal({ open, title, submitLabel, initialTask, onClose, onSubmi
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+              <label className="block text-sm font-medium text-gray-750 mb-1">Title</label>
               <input
                 type="text"
                 value={formState.title}
                 onChange={(event) => setFormState((current) => ({ ...current, title: event.target.value }))}
                 placeholder="Follow up on pricing"
                 className={fieldClass}
+                required
               />
             </div>
 
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Client Name</label>
-              <input
-                type="text"
-                value={formState.clientName}
-                onChange={(event) => setFormState((current) => ({ ...current, clientName: event.target.value }))}
-                placeholder="Acme Co."
-                className={fieldClass}
-              />
+            <div className="relative md:col-span-2">
+              <label className="block text-sm font-medium text-gray-750 mb-1">Link to Lead (Optional)</label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    placeholder="Search lead by name..."
+                    value={leadSearch}
+                    onChange={(e) => {
+                      setLeadSearch(e.target.value);
+                      setIsDropdownOpen(true);
+                      // Clear selection if typing
+                      if (selectedLeadId) setSelectedLeadId(null);
+                    }}
+                    onFocus={() => setIsDropdownOpen(true)}
+                    className={fieldClass}
+                  />
+                  {isDropdownOpen && filteredLeads.length > 0 && (
+                    <ul className="absolute z-20 w-full mt-1 max-h-40 overflow-y-auto bg-white border border-gray-300 rounded-lg shadow-lg text-sm">
+                      {filteredLeads.map((l) => (
+                        <li
+                          key={l.id}
+                          onClick={() => {
+                            setSelectedLeadId(l.id);
+                            setLeadSearch(l.name);
+                            setIsDropdownOpen(false);
+                          }}
+                          className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-gray-900 font-medium"
+                        >
+                          {l.name}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                {selectedLeadId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedLeadId(null);
+                      setLeadSearch('');
+                    }}
+                    className="px-3 py-2 border border-gray-305 rounded-lg text-sm text-red-650 hover:bg-red-50 font-semibold transition-colors"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+              <label className="block text-sm font-medium text-gray-755 mb-1">Type</label>
               <select
                 value={formState.type}
                 onChange={(event) => setFormState((current) => ({ ...current, type: event.target.value as TaskType }))}
@@ -325,7 +407,7 @@ function TaskFormModal({ open, title, submitLabel, initialTask, onClose, onSubmi
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+              <label className="block text-sm font-medium text-gray-755 mb-1">Priority</label>
               <select
                 value={formState.priority}
                 onChange={(event) => setFormState((current) => ({ ...current, priority: event.target.value as TaskPriority }))}
@@ -340,31 +422,33 @@ function TaskFormModal({ open, title, submitLabel, initialTask, onClose, onSubmi
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Due Date</label>
+              <label className="block text-sm font-medium text-gray-755 mb-1">Due Date</label>
               <input
                 type="date"
                 value={formState.dueDate}
                 onChange={(event) => setFormState((current) => ({ ...current, dueDate: event.target.value }))}
                 className={fieldClass}
+                required
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Due Time</label>
+              <label className="block text-sm font-medium text-gray-755 mb-1">Due Time</label>
               <input
                 type="time"
                 value={formState.dueTime}
                 onChange={(event) => setFormState((current) => ({ ...current, dueTime: event.target.value }))}
                 className={fieldClass}
+                required
               />
             </div>
 
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+              <label className="block text-sm font-medium text-gray-755 mb-1">Notes</label>
               <textarea
                 value={formState.notes}
                 onChange={(event) => setFormState((current) => ({ ...current, notes: event.target.value }))}
-                rows={4}
+                rows={3}
                 placeholder="Call notes, reminders, next steps..."
                 className={fieldClass}
               />
@@ -395,10 +479,10 @@ function TaskFormModal({ open, title, submitLabel, initialTask, onClose, onSubmi
 interface TaskRowProps {
   task: Task;
   now: Date;
-  onComplete: (taskId: string) => void;
-  onSnooze: (taskId: string, days: number) => void;
+  onComplete: (taskId: number) => void;
+  onSnooze: (taskId: number, days: number) => void;
   onEdit: (task: Task) => void;
-  onDelete: (taskId: string) => void;
+  onDelete: (taskId: number) => void;
 }
 
 function TaskRow({ task, now, onComplete, onSnooze, onEdit, onDelete }: TaskRowProps) {
@@ -430,10 +514,19 @@ function TaskRow({ task, now, onComplete, onSnooze, onEdit, onDelete }: TaskRowP
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
-              <span className="font-medium text-gray-800">{task.clientName}</span>
-              <span className="text-gray-300">•</span>
+              {task.leadId ? (
+                <Link
+                  href={`/enquiries?leadId=${task.leadId}`}
+                  className="font-semibold text-blue-600 hover:text-blue-800 hover:underline"
+                >
+                  {task.leadName || 'View Lead'}
+                </Link>
+              ) : (
+                <span className="text-gray-400 italic text-sm">No lead linked</span>
+              )}
+              <span className="text-gray-305">•</span>
               <span className="capitalize">{typeMeta.label}</span>
-              <span className="text-gray-300">•</span>
+              <span className="text-gray-305">•</span>
               <span className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${priorityMeta.className}`}>
                 {priorityMeta.label} priority
               </span>
@@ -452,42 +545,46 @@ function TaskRow({ task, now, onComplete, onSnooze, onEdit, onDelete }: TaskRowP
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => onComplete(task.id)}
-              className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100"
-            >
-              Complete ✓
-            </button>
+            {task.status !== 'completed' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onComplete(task.id)}
+                  className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100"
+                >
+                  Complete
+                </button>
 
-            <details className="group relative">
-              <summary className="list-none cursor-pointer rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-100">
-                Snooze
-              </summary>
-              <div className="absolute right-0 z-10 mt-2 w-44 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
-                <button
-                  type="button"
-                  onClick={() => onSnooze(task.id, 1)}
-                  className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                >
-                  +1 day
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onSnooze(task.id, 3)}
-                  className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                >
-                  +3 days
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onSnooze(task.id, 7)}
-                  className="block w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                >
-                  Next week
-                </button>
-              </div>
-            </details>
+                <details className="group relative">
+                  <summary className="list-none cursor-pointer rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-100">
+                    Snooze
+                  </summary>
+                  <div className="absolute right-0 z-10 mt-2 w-44 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
+                    <button
+                      type="button"
+                      onClick={() => onSnooze(task.id, 1)}
+                      className="block w-full px-3 py-2 text-left text-sm text-gray-705 hover:bg-gray-50"
+                    >
+                      +1 day
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onSnooze(task.id, 3)}
+                      className="block w-full px-3 py-2 text-left text-sm text-gray-705 hover:bg-gray-50"
+                    >
+                      +3 days
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onSnooze(task.id, 7)}
+                      className="block w-full px-3 py-2 text-left text-sm text-gray-705 hover:bg-gray-50"
+                    >
+                      Next week
+                    </button>
+                  </div>
+                </details>
+              </>
+            )}
 
             <button
               type="button"
@@ -518,10 +615,10 @@ interface TaskSectionProps {
   emptyMessage: string;
   tasks: Task[];
   now: Date;
-  onComplete: (taskId: string) => void;
-  onSnooze: (taskId: string, days: number) => void;
+  onComplete: (taskId: number) => void;
+  onSnooze: (taskId: number, days: number) => void;
   onEdit: (task: Task) => void;
-  onDelete: (taskId: string) => void;
+  onDelete: (taskId: number) => void;
 }
 
 function TaskSection({
@@ -569,17 +666,32 @@ function TaskSection({
 }
 
 export default function TasksPage() {
-  const tasks = useTaskStore((state) => state.tasks);
-  const addTask = useTaskStore((state) => state.addTask);
-  const updateTask = useTaskStore((state) => state.updateTask);
-  const completeTask = useTaskStore((state) => state.completeTask);
-  const snoozeTask = useTaskStore((state) => state.snoozeTask);
-  const deleteTask = useTaskStore((state) => state.deleteTask);
+  const {
+    tasks,
+    loading,
+    error,
+    fetchTasks,
+    createTask,
+    updateTask,
+    completeTask,
+    snoozeTask,
+    deleteTask,
+  } = useTaskStore();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [completedOpen, setCompletedOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(() => new Date());
+  const [isFirstLoad, setIsFirstLoad] = useState(true);
+
+  useEffect(() => {
+    fetchTasks()
+      .catch((err) => {
+        console.error('Error loading tasks:', err);
+        toast.error('Failed to load tasks from database');
+      })
+      .finally(() => setIsFirstLoad(false));
+  }, [fetchTasks]);
 
   useEffect(() => {
     const intervalId = window.setInterval(() => {
@@ -650,14 +762,9 @@ export default function TasksPage() {
     setEditingTask(null);
   };
 
-  const handleSubmit = (formState: TaskFormState) => {
+  const handleSubmit = async (formState: TaskFormState) => {
     if (!formState.title.trim()) {
       toast.error('Enter a task title');
-      return;
-    }
-
-    if (!formState.clientName.trim()) {
-      toast.error('Enter a client name');
       return;
     }
 
@@ -665,33 +772,44 @@ export default function TasksPage() {
 
     const payload = {
       title: formState.title.trim(),
-      clientName: formState.clientName.trim(),
+      leadId: formState.leadId,
       type: formState.type,
       priority: formState.priority,
       dueDate,
-      notes: formState.notes.trim() ? formState.notes.trim() : undefined,
-      ...(editingTask?.leadId ? { leadId: editingTask.leadId } : {}),
+      notes: formState.notes.trim() ? formState.notes.trim() : null,
     };
 
-    if (editingTask) {
-      updateTask(editingTask.id, payload);
-      toast.success('Task updated');
-    } else {
-      addTask(payload);
-      toast.success('Task created');
+    try {
+      if (editingTask) {
+        await updateTask(editingTask.id, payload);
+        toast.success('Task updated');
+      } else {
+        await createTask(payload);
+        toast.success('Task created');
+      }
+      closeModal();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save task');
     }
-
-    closeModal();
   };
 
-  const handleComplete = (taskId: string) => {
-    completeTask(taskId);
-    toast.success('Task completed');
+  const handleComplete = async (taskId: number) => {
+    try {
+      await completeTask(taskId);
+      toast.success('Task completed');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to complete task');
+    }
   };
 
-  const handleSnooze = (taskId: string, days: number) => {
-    snoozeTask(taskId, getSnoozedDueDate(days));
-    toast.success(`Task snoozed ${days === 7 ? 'until next week' : `by ${days} day${days === 1 ? '' : 's'}`}`);
+  const handleSnooze = async (taskId: number, days: number) => {
+    try {
+      const newDueDate = getSnoozedDueDate(days);
+      await snoozeTask(taskId, newDueDate);
+      toast.success(`Task snoozed ${days === 7 ? 'until next week' : `by ${days} day${days === 1 ? '' : 's'}`}`);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to snooze task');
+    }
   };
 
   const handleEdit = (task: Task) => {
@@ -699,15 +817,30 @@ export default function TasksPage() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = (taskId: string) => {
+  const handleDelete = async (taskId: number) => {
     const shouldDelete = window.confirm('Delete this task?');
     if (!shouldDelete) {
       return;
     }
 
-    deleteTask(taskId);
-    toast.success('Task deleted');
+    try {
+      await deleteTask(taskId);
+      toast.success('Task deleted');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete task');
+    }
   };
+
+  if (isFirstLoad && loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 font-semibold">Loading tasks...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.10),_transparent_28%),linear-gradient(180deg,_#f8fafc_0%,_#f1f5f9_100%)] p-6">
@@ -751,8 +884,17 @@ export default function TasksPage() {
         </header>
 
         {totalBadgeCount > 0 && (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm">
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm font-medium">
             You have {totalBadgeCount} task{totalBadgeCount === 1 ? '' : 's'} due today or already overdue.
+          </div>
+        )}
+
+        {error && (
+          <div className="rounded-2xl border border-red-200 bg-red-55 px-4 py-3 text-sm text-red-900 shadow-sm font-semibold flex items-center gap-2">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <span>{error}</span>
           </div>
         )}
 
@@ -801,7 +943,7 @@ export default function TasksPage() {
             onToggle={(event) => setCompletedOpen(event.currentTarget.open)}
             className={`rounded-2xl border bg-white shadow-sm ${getSectionAccent('completed')}`}
           >
-            <summary className="cursor-pointer list-none px-5 py-4">
+            <summary className="cursor-pointer list-none px-5 py-4 select-none">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <h2 className="text-sm font-semibold text-gray-900">Completed</h2>

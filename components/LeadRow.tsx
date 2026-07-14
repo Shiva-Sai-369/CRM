@@ -7,6 +7,7 @@ import type { Lead } from "@/lib/parseLeads";
 import StatusDropdown from "./StatusDropdown";
 import TagPill from "./TagPill";
 import { useProjectStore } from "@/store/projectStore";
+import { useTaskStore } from "@/store/taskStore";
 import { 
   Pencil, 
   Check, 
@@ -65,6 +66,16 @@ export default function LeadRow({
   const addNoteForLead = useProjectStore((state) => state.addNoteForLead);
   const leadNotes = useProjectStore((state) => state.leadNotes[Number(lead.uniqueKey)] || []);
 
+  // Add Task States
+  const createTask = useTaskStore((state) => state.createTask);
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskType, setTaskType] = useState<"call" | "meeting" | "follow-up" | "email" | "other">("follow-up");
+  const [taskPriority, setTaskPriority] = useState<"low" | "medium" | "high">("medium");
+  const [taskDueDate, setTaskDueDate] = useState("");
+  const [taskDueTime, setTaskDueTime] = useState("");
+  const [taskNotes, setTaskNotes] = useState("");
+  const [isCreatingTask, setIsCreatingTask] = useState(false);
+
   // Sync edits if lead prop changes
   useEffect(() => {
     setEditedName(lead.name);
@@ -85,6 +96,18 @@ export default function LeadRow({
           setNotesError("Failed to load notes history.");
         })
         .finally(() => setLoadingNotes(false));
+
+      // Set default due date/time to today + 1 hour when expanding
+      const now = new Date();
+      const future = new Date(now.getTime() + 60 * 60 * 1000);
+      const yyyy = future.getFullYear();
+      const mm = String(future.getMonth() + 1).padStart(2, "0");
+      const dd = String(future.getDate()).padStart(2, "0");
+      const hh = String(future.getHours()).padStart(2, "0");
+      const min = String(future.getMinutes()).padStart(2, "0");
+      
+      setTaskDueDate(`${yyyy}-${mm}-${dd}`);
+      setTaskDueTime(`${hh}:${min}`);
     }
   }, [isExpanded, lead.uniqueKey, fetchNotesForLead]);
 
@@ -147,6 +170,53 @@ export default function LeadRow({
     }
   };
 
+  const handleAddTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!taskTitle.trim()) {
+      toast.error("Task title is required");
+      return;
+    }
+    if (!taskDueDate || !taskDueTime) {
+      toast.error("Due date and time are required");
+      return;
+    }
+
+    setIsCreatingTask(true);
+    try {
+      const combinedDateTime = new Date(`${taskDueDate}T${taskDueTime}:00`);
+      await createTask({
+        title: taskTitle.trim(),
+        leadId: Number(lead.uniqueKey),
+        type: taskType,
+        priority: taskPriority,
+        dueDate: combinedDateTime.toISOString(),
+        notes: taskNotes.trim() ? taskNotes.trim() : null,
+      });
+      
+      // Clear form
+      setTaskTitle("");
+      setTaskNotes("");
+      
+      // Reset date time
+      const now = new Date();
+      const future = new Date(now.getTime() + 60 * 60 * 1000);
+      const yyyy = future.getFullYear();
+      const mm = String(future.getMonth() + 1).padStart(2, "0");
+      const dd = String(future.getDate()).padStart(2, "0");
+      const hh = String(future.getHours()).padStart(2, "0");
+      const min = String(future.getMinutes()).padStart(2, "0");
+      setTaskDueDate(`${yyyy}-${mm}-${dd}`);
+      setTaskDueTime(`${hh}:${min}`);
+      
+      toast.success("Task created successfully");
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Failed to create task");
+    } finally {
+      setIsCreatingTask(false);
+    }
+  };
+
   const formatNoteTimestamp = (dateStr: string) => {
     const date = new Date(dateStr);
     if (isNaN(date.getTime())) return "";
@@ -167,6 +237,7 @@ export default function LeadRow({
   return (
     <>
       <tr
+        id={`lead-row-${lead.uniqueKey}`}
         className={`border-b border-gray-200 hover:bg-blue-50 transition-colors group ${isSelected ? 'bg-blue-50' : ''}`}
       >
         <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -511,64 +582,176 @@ export default function LeadRow({
                 </div>
               </div>
 
-              {/* Notes History Section */}
-              <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
-                <h3 className="text-base font-bold text-gray-900 mb-3 flex items-center">
-                  <FileText className="w-5 h-5 mr-2 text-amber-600" />
-                  Notes History
-                </h3>
-                
-                {loadingNotes ? (
-                  <div className="flex items-center gap-2 py-4 text-sm text-gray-500">
-                    <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
-                    <span>Loading notes...</span>
-                  </div>
-                ) : notesError ? (
-                  <div className="flex items-center gap-2 py-2 text-sm text-red-600">
-                    <AlertCircle className="w-4 h-4" />
-                    <span>{notesError}</span>
-                  </div>
-                ) : (
-                  <div className="space-y-2.5 max-h-48 overflow-y-auto mb-4 pr-1">
-                    {leadNotes.length === 0 ? (
-                      <p className="text-sm text-gray-500 italic py-2">No notes added yet.</p>
-                    ) : (
-                      leadNotes.map((note) => (
-                        <div 
-                          key={note.id} 
-                          className="flex justify-between items-start gap-4 text-sm bg-gray-50 p-2.5 rounded border border-gray-100"
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* Notes History Section */}
+                <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
+                  <h3 className="text-base font-bold text-gray-900 mb-3 flex items-center">
+                    <FileText className="w-5 h-5 mr-2 text-amber-600" />
+                    Notes History
+                  </h3>
+                  
+                  {loadingNotes ? (
+                    <div className="flex items-center gap-2 py-4 text-sm text-gray-500">
+                      <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                      <span>Loading notes...</span>
+                    </div>
+                  ) : notesError ? (
+                    <div className="flex items-center gap-2 py-2 text-sm text-red-600">
+                      <AlertCircle className="w-4 h-4" />
+                      <span>{notesError}</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5 max-h-48 overflow-y-auto mb-4 pr-1">
+                      {leadNotes.length === 0 ? (
+                        <p className="text-sm text-gray-500 italic py-2">No notes added yet.</p>
+                      ) : (
+                        leadNotes.map((note) => (
+                          <div 
+                            key={note.id} 
+                            className="flex justify-between items-start gap-4 text-sm bg-gray-50 p-2.5 rounded border border-gray-100"
+                          >
+                            <p className="text-gray-800 whitespace-pre-wrap flex-1">{note.content}</p>
+                            <span className="text-xs text-gray-400 font-medium shrink-0 mt-0.5 font-mono">
+                              {formatNoteTimestamp(note.created_at)}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                  
+                  <form onSubmit={handleAddNote} className="flex gap-2">
+                    <textarea
+                      value={newNoteText}
+                      onChange={(e) => setNewNoteText(e.target.value)}
+                      disabled={isAddingNote}
+                      placeholder="Add a note to history..."
+                      rows={1}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none h-10 disabled:opacity-50"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isAddingNote || !newNoteText.trim()}
+                      className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed shrink-0 h-10 flex items-center justify-center"
+                    >
+                      {isAddingNote ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        "Add Note"
+                      )}
+                    </button>
+                  </form>
+                </div>
+
+                {/* Add Task Section */}
+                <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
+                  <h3 className="text-base font-bold text-gray-900 mb-3 flex items-center">
+                    <svg className="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                    </svg>
+                    Add Task
+                  </h3>
+                  
+                  <form onSubmit={handleAddTask} className="space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">
+                          Task Title <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="e.g. Call client for feedback"
+                          value={taskTitle}
+                          onChange={(e) => setTaskTitle(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-950"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">
+                          Task Type
+                        </label>
+                        <select
+                          value={taskType}
+                          onChange={(e) => setTaskType(e.target.value as any)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-950"
                         >
-                          <p className="text-gray-800 whitespace-pre-wrap flex-1">{note.content}</p>
-                          <span className="text-xs text-gray-400 font-medium shrink-0 mt-0.5 font-mono">
-                            {formatNoteTimestamp(note.created_at)}
-                          </span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                )}
-                
-                <form onSubmit={handleAddNote} className="flex gap-2">
-                  <textarea
-                    value={newNoteText}
-                    onChange={(e) => setNewNoteText(e.target.value)}
-                    disabled={isAddingNote}
-                    placeholder="Add a note to history..."
-                    rows={1}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none h-10 disabled:opacity-50"
-                  />
-                  <button
-                    type="submit"
-                    disabled={isAddingNote || !newNoteText.trim()}
-                    className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed shrink-0 h-10 flex items-center justify-center"
-                  >
-                    {isAddingNote ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      "Add Note"
-                    )}
-                  </button>
-                </form>
+                          <option value="call">Call</option>
+                          <option value="meeting">Meeting</option>
+                          <option value="follow-up">Follow-up</option>
+                          <option value="email">Email</option>
+                          <option value="other">Other</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">
+                          Priority
+                        </label>
+                        <select
+                          value={taskPriority}
+                          onChange={(e) => setTaskPriority(e.target.value as any)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-950"
+                        >
+                          <option value="low">Low</option>
+                          <option value="medium">Medium</option>
+                          <option value="high">High</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">
+                          Due Date <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="date"
+                          required
+                          value={taskDueDate}
+                          onChange={(e) => setTaskDueDate(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-950"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">
+                          Due Time <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="time"
+                          required
+                          value={taskDueTime}
+                          onChange={(e) => setTaskDueTime(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-gray-950"
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">
+                          Notes / Description
+                        </label>
+                        <textarea
+                          placeholder="Add details, links, or contact info..."
+                          value={taskNotes}
+                          onChange={(e) => setTaskNotes(e.target.value)}
+                          rows={2}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y bg-white text-gray-950"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={isCreatingTask || !taskTitle.trim()}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-lg flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                      >
+                        {isCreatingTask ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Creating...</span>
+                          </>
+                        ) : (
+                          <span>Create Task</span>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
               </div>
 
               {/* Action Buttons */}

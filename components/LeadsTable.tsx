@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { sortLeads, type SortColumn, type SortDirection } from "@/lib/sortLeads";
 import { exportLeadsToCSV } from "@/lib/exportCsv";
 import { ROWS_PER_PAGE } from "@/lib/constants";
@@ -29,6 +30,8 @@ export default function LeadsTable({ leads, loading, onAddLeadClick }: LeadsTabl
   const [rowsPerPage, setRowsPerPage] = useState(ROWS_PER_PAGE);
 
   const clearFilters = useFilterStore(state => state.clearFilters);
+  const searchParams = useSearchParams();
+  const leadIdParam = searchParams.get("leadId");
 
   // Update local leads when props change
   useMemo(() => {
@@ -116,6 +119,24 @@ export default function LeadsTable({ leads, loading, onAddLeadClick }: LeadsTabl
     const startIndex = (currentPage - 1) * rowsPerPage;
     return sortedLeads.slice(startIndex, startIndex + rowsPerPage);
   }, [sortedLeads, currentPage, rowsPerPage]);
+
+  useEffect(() => {
+    if (leadIdParam) {
+      const index = sortedLeads.findIndex((lead) => lead.uniqueKey === leadIdParam);
+      if (index !== -1) {
+        const targetPage = Math.floor(index / rowsPerPage) + 1;
+        setCurrentPage(targetPage);
+        setExpandedRowId(leadIdParam);
+        
+        setTimeout(() => {
+          const element = document.getElementById(`lead-row-${leadIdParam}`);
+          if (element) {
+            element.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }, 150);
+      }
+    }
+  }, [leadIdParam, sortedLeads, rowsPerPage]);
 
   const handleSort = (column: SortColumn) => {
     if (sortColumn === column) {
