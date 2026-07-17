@@ -1,9 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   typescript: {
-    // Disable type checking during build
     ignoreBuildErrors: true,
   },
+  output: 'standalone',
 };
 
 export default nextConfig;
