@@ -252,7 +252,7 @@ export default function LeadRow({
         id={`lead-row-${lead.uniqueKey}`}
         className={`border-b border-gray-200 hover:bg-blue-50 transition-colors group ${isSelected ? 'bg-blue-50' : ''}`}
       >
-        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+        <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
           <input
             type="checkbox"
             checked={isSelected}
@@ -260,68 +260,7 @@ export default function LeadRow({
             className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
           />
         </td>
-        <td 
-          onClick={onToggleExpand}
-          className="px-4 py-3 text-base font-semibold text-gray-900 cursor-pointer"
-        >
-          {lead.name || "N/A"}
-        </td>
-        <td 
-          onClick={onToggleExpand}
-          className="px-4 py-3 text-base text-gray-700 font-mono cursor-pointer"
-        >
-          {lead.phone || "N/A"}
-        </td>
-        <td 
-          onClick={onToggleExpand}
-          className="px-4 py-3 text-base text-gray-600 cursor-pointer"
-        >
-          {lead.email || "N/A"}
-        </td>
-        <td className="px-4 py-3 bg-gray-50" onClick={(e) => e.stopPropagation()}>
-          <div className="flex items-center justify-center">
-            <StatusDropdown
-              currentStatus={lead.leadStatus}
-              availableStatuses={availableStatuses}
-              onStatusChange={handleStatusChange}
-            />
-          </div>
-        </td>
-        <td 
-          onClick={onToggleExpand}
-          className="px-4 py-3 text-sm text-gray-600 cursor-pointer"
-        >
-          {lead.leadSource || "N/A"}
-        </td>
-        <td 
-          onClick={onToggleExpand}
-          className="px-4 py-3 text-sm text-gray-600 cursor-pointer max-w-xs"
-        >
-          {leadNotes.length > 0 ? (
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-gray-900 font-medium truncate max-w-[180px]" title={leadNotes[0].content}>
-                {leadNotes[0].content}
-              </span>
-              <span className="text-xs text-gray-400 font-mono shrink-0">
-                {formatNoteTimestamp(leadNotes[0].created_at)}
-              </span>
-            </div>
-          ) : (
-            <span className="text-gray-400 italic">No notes yet</span>
-          )}
-        </td>
-        <td 
-          onClick={onToggleExpand}
-          className="px-4 py-3 cursor-pointer"
-        >
-          <div>
-            <p className="text-base font-semibold text-gray-900">{formattedDate || "N/A"}</p>
-            {formattedTime && (
-              <p className="text-sm text-gray-500">{formattedTime}</p>
-            )}
-          </div>
-        </td>
-        <td className="px-4 py-3">
+        <td className="px-3 py-3">
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -349,6 +288,67 @@ export default function LeadRow({
               </span>
             )}
           </button>
+        </td>
+        <td 
+          onClick={onToggleExpand}
+          className="px-3 py-3 text-sm font-semibold text-gray-900 cursor-pointer"
+        >
+          {lead.name || "N/A"}
+        </td>
+        <td 
+          onClick={onToggleExpand}
+          className="px-3 py-3 text-sm text-gray-700 font-mono cursor-pointer whitespace-nowrap"
+        >
+          {lead.phone || "N/A"}
+        </td>
+        <td 
+          onClick={onToggleExpand}
+          className="px-3 py-3 text-sm text-gray-600 cursor-pointer whitespace-nowrap"
+        >
+          {lead.email || "N/A"}
+        </td>
+        <td className="px-3 py-3 bg-gray-50" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-center">
+            <StatusDropdown
+              currentStatus={lead.leadStatus}
+              availableStatuses={availableStatuses}
+              onStatusChange={handleStatusChange}
+            />
+          </div>
+        </td>
+        <td 
+          onClick={onToggleExpand}
+          className="px-3 py-3 text-sm text-gray-600 cursor-pointer"
+        >
+          {lead.leadSource || "N/A"}
+        </td>
+        <td 
+          onClick={onToggleExpand}
+          className="px-3 py-3 text-sm text-gray-600 cursor-pointer max-w-xs"
+        >
+          {leadNotes.length > 0 ? (
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-gray-900 font-medium truncate max-w-[180px]" title={leadNotes[0].content}>
+                {leadNotes[0].content}
+              </span>
+              <span className="text-xs text-gray-400 font-mono shrink-0">
+                {formatNoteTimestamp(leadNotes[0].created_at)}
+              </span>
+            </div>
+          ) : (
+            <span className="text-gray-400 italic">No notes yet</span>
+          )}
+        </td>
+        <td 
+          onClick={onToggleExpand}
+          className="px-3 py-3 cursor-pointer whitespace-nowrap"
+        >
+          <div>
+            <p className="text-sm font-semibold text-gray-900">{formattedDate || "N/A"}</p>
+            {formattedTime && (
+              <p className="text-xs text-gray-500">{formattedTime}</p>
+            )}
+          </div>
         </td>
       </tr>
 

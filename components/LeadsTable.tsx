@@ -220,7 +220,7 @@ export default function LeadsTable({ leads, loading, onAddLeadClick }: LeadsTabl
 
   const renderTableHeader = (column: SortColumn, label: string, filterable: boolean = false) => (
     <th
-      className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider select-none"
+      className="px-3 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider select-none whitespace-nowrap"
     >
       <div className="flex items-center justify-between gap-2">
         <div 
@@ -344,7 +344,7 @@ export default function LeadsTable({ leads, loading, onAddLeadClick }: LeadsTabl
         <table className="w-full">
           <thead className="bg-gray-50 border-b-2 border-gray-200">
             <tr>
-              <th className="px-4 py-3 w-12">
+              <th className="px-3 py-3 w-12">
                 <input
                   type="checkbox"
                   checked={isAllSelected}
@@ -357,10 +357,13 @@ export default function LeadsTable({ leads, loading, onAddLeadClick }: LeadsTabl
                   className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
                 />
               </th>
+              <th className="px-3 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-28">
+                Actions
+              </th>
               {renderTableHeader("name", "Name", true)}
               {renderTableHeader("phone", "Phone", true)}
               {renderTableHeader("email", "Email", true)}
-              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+              <th className="px-3 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <span className="text-gray-700 font-bold text-xs">STATUS</span>
@@ -379,13 +382,10 @@ export default function LeadsTable({ leads, loading, onAddLeadClick }: LeadsTabl
                 </div>
               </th>
               {renderTableHeader("leadSource", "Form/Source", true)}
-              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-64">
+              <th className="px-3 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-64">
                 Last Note
               </th>
               {renderTableHeader("lastMessageDate", "Date & Time", true)}
-              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider w-28">
-                Actions
-              </th>
             </tr>
           </thead>
           <tbody>

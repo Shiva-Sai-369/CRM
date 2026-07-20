@@ -65,24 +65,39 @@ function EnquiriesContent() {
     setLastUpdated(now.toLocaleTimeString());
   };
 
+  // Fetch projects on mount
   useEffect(() => {
     fetchProjects();
   }, [fetchProjects]);
 
+  // Load selection from sessionStorage or fallback to default when projects are fetched
   useEffect(() => {
     if (projects.length === 0) return;
-    if (selectedProjectId !== null) return;
-
-    setSelectedProjectId(projects[0].id);
+    
+    // Only initialize once when selectedProjectId is still null
+    if (selectedProjectId === null) {
+      const savedProjectId = typeof window !== "undefined" ? sessionStorage.getItem("selectedProjectId") : null;
+      const savedSheetId = typeof window !== "undefined" ? sessionStorage.getItem("selectedSheetId") : null;
+      
+      if (savedProjectId !== null) {
+        setSelectedProjectId(savedProjectId === "all" ? "all" : Number(savedProjectId));
+      } else {
+        setSelectedProjectId(projects[0].id);
+      }
+      
+      if (savedSheetId !== null) {
+        setSelectedSheetId(savedSheetId === "all" ? "all" : Number(savedSheetId));
+      }
+    }
   }, [projects, selectedProjectId]);
 
+  // Fetch sheets when project changes
   useEffect(() => {
     if (selectedProjectId === null) return;
     void fetchSheetsForProject(selectedProjectId);
-    void fetchLeadsForProject(selectedProjectId).then(updateLastUpdatedTime);
-    setSelectedSheetId("all");
-  }, [fetchLeadsForProject, fetchSheetsForProject, selectedProjectId]);
+  }, [fetchSheetsForProject, selectedProjectId]);
 
+  // Fetch leads when project or sheet changes
   useEffect(() => {
     if (selectedProjectId === null) return;
     if (selectedSheetId === "all") {
@@ -91,6 +106,19 @@ function EnquiriesContent() {
       void fetchLeadsForSheet(selectedSheetId).then(updateLastUpdatedTime);
     }
   }, [fetchLeadsForProject, fetchLeadsForSheet, selectedProjectId, selectedSheetId]);
+
+  // Save selection changes to sessionStorage
+  useEffect(() => {
+    if (typeof window !== "undefined" && selectedProjectId !== null) {
+      sessionStorage.setItem("selectedProjectId", String(selectedProjectId));
+    }
+  }, [selectedProjectId]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("selectedSheetId", String(selectedSheetId));
+    }
+  }, [selectedSheetId]);
 
   // Subscribe to Supabase Realtime changes
   useEffect(() => {
@@ -193,7 +221,7 @@ function EnquiriesContent() {
   return (
     <div className="p-6">
       {/* Header */}
-      <div className="max-w-7xl mx-auto mb-6 bg-white border-b border-gray-200 px-6 py-4 rounded-lg shadow-sm">
+      <div className="w-full mb-6 bg-white border-b border-gray-200 px-6 py-4 rounded-lg shadow-sm">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 font-sans">Enquiries</h1>
@@ -259,7 +287,7 @@ function EnquiriesContent() {
 
       {/* Error Message */}
       {error && (
-        <div className="max-w-7xl mx-auto mb-6">
+        <div className="w-full mb-6">
           <div className="bg-red-50 border border-red-200 rounded-lg p-4">
             <div className="flex items-start gap-3">
               <svg className="w-5 h-5 text-red-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -275,12 +303,12 @@ function EnquiriesContent() {
       )}
 
       {/* Stats */}
-      <div className="max-w-7xl mx-auto mb-6">
+      <div className="w-full mb-6">
         <StatsStrip leads={filteredLeads} />
       </div>
 
       {/* Filters */}
-      <div className="max-w-7xl mx-auto mb-6">
+      <div className="w-full mb-6">
         <div className="mb-4 bg-white border border-gray-200 rounded-lg shadow-sm p-4">
           <div className="flex flex-wrap items-center gap-3">
             <label className="text-sm font-semibold text-gray-700">Project:</label>
@@ -289,6 +317,7 @@ function EnquiriesContent() {
               onChange={(e) => {
                 const val = e.target.value;
                 setSelectedProjectId(val === "all" ? "all" : Number(val));
+                setSelectedSheetId("all");
               }}
               className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
@@ -329,7 +358,7 @@ function EnquiriesContent() {
       </div>
 
       {/* Leads Table */}
-      <div className="max-w-7xl mx-auto">
+      <div className="w-full">
         {loading ? (
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
