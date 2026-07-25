@@ -1,11 +1,11 @@
-import type { Metadata } from "next";
-import "./globals.css";
-import { Toaster } from "react-hot-toast";
-import Sidebar from "@/components/Sidebar";
+import type { Metadata } from 'next';
+import './globals.css';
+import { Toaster } from 'react-hot-toast';
+import LayoutShell from '@/components/LayoutShell';
 
 export const metadata: Metadata = {
-  title: "CRM - Lead Enquiry Management",
-  description: "Lead enquiry management for small businesses",
+  title: 'CRM - Lead Enquiry Management',
+  description: 'Lead enquiry management for small businesses',
 };
 
 export default function RootLayout({
@@ -17,12 +17,7 @@ export default function RootLayout({
     <html lang="en">
       <body className="antialiased">
         <Toaster position="top-right" />
-        <div className="flex h-screen">
-          <Sidebar />
-          <main className="flex-1 overflow-y-auto bg-gray-50">
-            {children}
-          </main>
-        </div>
+        <LayoutShell>{children}</LayoutShell>
       </body>
     </html>
   );

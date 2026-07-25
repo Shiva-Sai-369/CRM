@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { createBrowserClient } from '@supabase/ssr';
 import {
   getProjectById,
   getProjectSheets,
@@ -13,6 +14,85 @@ import {
 import { getSheetTabs } from '@/lib/config';
 import { fetchLeadsFromTab } from '@/lib/services/fetchLeads';
 import type { Project, ProjectSheet } from '@/types/project';
+import type { UserRole } from '@/types/rbac';
+
+// ── Invite Client Modal ────────────────────────────────────────────────────
+
+function InviteClientModal({
+  projectId,
+  onClose,
+}: {
+  projectId: string;
+  onClose: () => void;
+}) {
+  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) return;
+    setLoading(true);
+    try {
+      const res = await fetch('/api/invite-client', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), projectId: Number(projectId) }),
+      });
+      const json = await res.json() as { error?: string };
+      if (!res.ok) throw new Error(json.error ?? 'Failed to send invite');
+      toast.success(`Client invite sent to ${email}`);
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-gray-200">
+        <h2 className="text-lg font-semibold text-gray-900 mb-1">Invite Client</h2>
+        <p className="text-sm text-gray-500 mb-5">
+          The client will receive an email and get read-only analytics access to this project.
+        </p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label htmlFor="invite-client-email" className="block text-sm text-gray-700 mb-1.5">
+              Client email address
+            </label>
+            <input
+              id="invite-client-email"
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="client@company.com"
+              className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-gray-900 placeholder-gray-400 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div className="flex gap-3 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-2.5 rounded-xl border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              id="btn-send-client-invite"
+              type="submit"
+              disabled={loading}
+              className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium transition-colors"
+            >
+              {loading ? 'Sending…' : 'Send Invite'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 export default function ProjectDetailPage() {
   const params = useParams();
@@ -26,6 +106,44 @@ export default function ProjectDetailPage() {
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const [editDesc, setEditDesc] = useState('');
+  const [showInviteClient, setShowInviteClient] = useState(false);
+  const [canInviteClient, setCanInviteClient] = useState(false);
+
+  // Check if current user can invite clients to this project
+  useEffect(() => {
+    const checkAccess = async () => {
+      try {
+        const supabase = createBrowserClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        );
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+        const role = (profile as { role: UserRole } | null)?.role;
+        if (role === 'super_admin') {
+          setCanInviteClient(true);
+          return;
+        }
+        if (role === 'team_member') {
+          const { data: assignment } = await supabase
+            .from('project_assignments')
+            .select('id')
+            .eq('user_id', user.id)
+            .eq('project_id', Number(projectId))
+            .maybeSingle();
+          setCanInviteClient(!!assignment);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    checkAccess();
+  }, [projectId]);
   const [showAddSheet, setShowAddSheet] = useState(false);
 
   const refresh = useCallback(() => {
@@ -163,6 +281,22 @@ export default function ProjectDetailPage() {
           )}
         </div>
 
+        {/* Invite Client button — super_admin always, team_member if assigned */}
+        {canInviteClient && (
+          <div className="flex justify-end">
+            <button
+              id="btn-invite-client"
+              onClick={() => setShowInviteClient(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium rounded-xl transition-colors shadow-lg shadow-purple-600/20"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              Invite Client
+            </button>
+          </div>
+        )}
+
         {/* Stats strip */}
         <div className="grid grid-cols-3 gap-4">
           {[
@@ -289,6 +423,14 @@ export default function ProjectDetailPage() {
           existingTabIds={sheets.map(s => s.tabId)}
           onClose={() => setShowAddSheet(false)}
           onAdded={() => { refresh(); setShowAddSheet(false); }}
+        />
+      )}
+
+      {/* Invite Client modal */}
+      {showInviteClient && (
+        <InviteClientModal
+          projectId={projectId}
+          onClose={() => setShowInviteClient(false)}
         />
       )}
     </div>
