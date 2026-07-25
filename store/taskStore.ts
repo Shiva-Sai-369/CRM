@@ -4,13 +4,16 @@ import { getSupabaseClient } from "@/lib/supabase";
 
 interface TaskStoreState {
   tasks: Task[];
+  completedCount: number;
   loading: boolean;
   error: string | null;
 
   fetchTasks: () => Promise<Task[]>;
+  getCompletedTasks: (limit?: number, offset?: number) => Promise<Task[]>;
   createTask: (taskData: Omit<Task, "id" | "createdAt" | "status" | "completedAt" | "leadName">) => Promise<Task>;
   updateTask: (id: number, updates: Partial<Task>) => Promise<void>;
   completeTask: (id: number) => Promise<void>;
+  reopenTask: (id: number) => Promise<void>;
   snoozeTask: (id: number, newDueDate: string) => Promise<void>;
   deleteTask: (id: number) => Promise<void>;
 }
@@ -56,6 +59,7 @@ function mapRowToTask(row: DbTaskRow): Task {
 
 export const useTaskStore = create<TaskStoreState>()((set) => ({
   tasks: [],
+  completedCount: 0,
   loading: false,
   error: null,
 
@@ -63,19 +67,51 @@ export const useTaskStore = create<TaskStoreState>()((set) => ({
     set({ loading: true, error: null });
     try {
       const supabase = getSupabaseClient();
+      
+      const [tasksResult, countResult] = await Promise.all([
+        supabase
+          .from("tasks")
+          .select("*, sheet_leads(name)")
+          .neq("status", "completed")
+          .order("due_date", { ascending: true }),
+        supabase
+          .from("tasks")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "completed")
+      ]);
+
+      if (tasksResult.error) throw tasksResult.error;
+      if (countResult.error) throw countResult.error;
+
+      const rows = (tasksResult.data || []) as DbTaskRow[];
+      const tasks = rows.map((row: DbTaskRow) => mapRowToTask(row));
+      const completedCount = countResult.count || 0;
+
+      set({ tasks, completedCount, loading: false });
+      return tasks;
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : "Failed to fetch tasks";
+      set({ error: errMsg, loading: false });
+      throw err;
+    }
+  },
+
+  getCompletedTasks: async (limit = 50, offset = 0) => {
+    try {
+      const supabase = getSupabaseClient();
       const { data, error } = await supabase
         .from("tasks")
         .select("*, sheet_leads(name)")
-        .order("due_date", { ascending: true });
+        .eq("status", "completed")
+        .order("completed_at", { ascending: false })
+        .range(offset, offset + limit - 1);
 
       if (error) throw error;
 
-      const tasks = (data || []).map((row: any) => mapRowToTask(row));
-      set({ tasks, loading: false });
-      return tasks;
-    } catch (err: any) {
-      const errMsg = err.message || "Failed to fetch tasks";
-      set({ error: errMsg, loading: false });
+      const rows = (data || []) as DbTaskRow[];
+      return rows.map((row: DbTaskRow) => mapRowToTask(row));
+    } catch (err: unknown) {
+      console.error("Failed to get completed tasks:", err);
       throw err;
     }
   },
@@ -103,14 +139,14 @@ export const useTaskStore = create<TaskStoreState>()((set) => ({
       if (error) throw error;
       if (!data) throw new Error("No data returned from task creation");
 
-      const newTask = mapRowToTask(data as any);
+      const newTask = mapRowToTask(data as DbTaskRow);
       set((state) => ({
         tasks: [...state.tasks, newTask],
         loading: false,
       }));
       return newTask;
-    } catch (err: any) {
-      const errMsg = err.message || "Failed to create task";
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : "Failed to create task";
       set({ error: errMsg, loading: false });
       throw err;
     }
@@ -141,13 +177,13 @@ export const useTaskStore = create<TaskStoreState>()((set) => ({
       if (error) throw error;
       if (!data) throw new Error("No data returned from task update");
 
-      const updatedTask = mapRowToTask(data as any);
+      const updatedTask = mapRowToTask(data as DbTaskRow);
       set((state) => ({
         tasks: state.tasks.map((t) => (t.id === id ? updatedTask : t)),
         loading: false,
       }));
-    } catch (err: any) {
-      const errMsg = err.message || "Failed to update task";
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : "Failed to update task";
       set({ error: errMsg, loading: false });
       throw err;
     }
@@ -166,13 +202,39 @@ export const useTaskStore = create<TaskStoreState>()((set) => ({
       if (error) throw error;
 
       set((state) => ({
-        tasks: state.tasks.map((t) =>
-          t.id === id ? { ...t, status: "completed", completedAt: now } : t
-        ),
+        tasks: state.tasks.filter((t) => t.id !== id),
+        completedCount: state.completedCount + 1,
         loading: false,
       }));
-    } catch (err: any) {
-      const errMsg = err.message || "Failed to complete task";
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : "Failed to complete task";
+      set({ error: errMsg, loading: false });
+      throw err;
+    }
+  },
+
+  reopenTask: async (id) => {
+    set({ loading: true, error: null });
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase
+        .from("tasks")
+        .update({ status: "pending", completed_at: null })
+        .eq("id", id)
+        .select("*, sheet_leads(name)")
+        .single();
+
+      if (error) throw error;
+      if (!data) throw new Error("No data returned from task reopen");
+
+      const reopenedTask = mapRowToTask(data as DbTaskRow);
+      set((state) => ({
+        tasks: [...state.tasks, reopenedTask],
+        completedCount: Math.max(0, state.completedCount - 1),
+        loading: false,
+      }));
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : "Failed to reopen task";
       set({ error: errMsg, loading: false });
       throw err;
     }
@@ -195,8 +257,8 @@ export const useTaskStore = create<TaskStoreState>()((set) => ({
         ),
         loading: false,
       }));
-    } catch (err: any) {
-      const errMsg = err.message || "Failed to snooze task";
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : "Failed to snooze task";
       set({ error: errMsg, loading: false });
       throw err;
     }
@@ -206,6 +268,8 @@ export const useTaskStore = create<TaskStoreState>()((set) => ({
     set({ loading: true, error: null });
     try {
       const supabase = getSupabaseClient();
+      const wasActive = useTaskStore.getState().tasks.some((t) => t.id === id);
+
       const { error } = await supabase
         .from("tasks")
         .delete()
@@ -215,10 +279,11 @@ export const useTaskStore = create<TaskStoreState>()((set) => ({
 
       set((state) => ({
         tasks: state.tasks.filter((t) => t.id !== id),
+        completedCount: wasActive ? state.completedCount : Math.max(0, state.completedCount - 1),
         loading: false,
       }));
-    } catch (err: any) {
-      const errMsg = err.message || "Failed to delete task";
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : "Failed to delete task";
       set({ error: errMsg, loading: false });
       throw err;
     }

@@ -483,9 +483,10 @@ interface TaskRowProps {
   onSnooze: (taskId: number, days: number) => void;
   onEdit: (task: Task) => void;
   onDelete: (taskId: number) => void;
+  onReopen?: (taskId: number) => void;
 }
 
-function TaskRow({ task, now, onComplete, onSnooze, onEdit, onDelete }: TaskRowProps) {
+function TaskRow({ task, now, onComplete, onSnooze, onEdit, onDelete, onReopen }: TaskRowProps) {
   const typeMeta = TASK_TYPE_META[task.type];
   const priorityMeta = TASK_PRIORITY_META[task.priority];
   const dueState = getTaskDueState(task, now);
@@ -509,6 +510,11 @@ function TaskRow({ task, now, onComplete, onSnooze, onEdit, onDelete }: TaskRowP
               {dueState === 'snoozed' && (
                 <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
                   Snoozed
+                </span>
+              )}
+              {task.status === 'completed' && (
+                <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+                  Completed
                 </span>
               )}
             </div>
@@ -538,14 +544,21 @@ function TaskRow({ task, now, onComplete, onSnooze, onEdit, onDelete }: TaskRowP
 
         <div className="flex flex-col items-start gap-3 lg:items-end">
           <div className="text-right">
-            <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Due</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-400">
+              {task.status === 'completed' ? 'Originally Due' : 'Due'}
+            </p>
             <p className={`text-sm font-semibold ${dueState === 'overdue' ? 'text-red-700' : 'text-gray-900'}`}>
               {formatTaskDateTime(task.dueDate)}
             </p>
+            {task.status === 'completed' && task.completedAt && (
+              <p className="text-xs text-emerald-700 font-semibold mt-1">
+                Completed on {formatTaskDateTime(task.completedAt)}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {task.status !== 'completed' && (
+            {task.status !== 'completed' ? (
               <>
                 <button
                   type="button"
@@ -583,16 +596,26 @@ function TaskRow({ task, now, onComplete, onSnooze, onEdit, onDelete }: TaskRowP
                     </button>
                   </div>
                 </details>
-              </>
-            )}
 
-            <button
-              type="button"
-              onClick={() => onEdit(task)}
-              className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50"
-            >
-              Edit
-            </button>
+                <button
+                  type="button"
+                  onClick={() => onEdit(task)}
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+                >
+                  Edit
+                </button>
+              </>
+            ) : (
+              onReopen && (
+                <button
+                  type="button"
+                  onClick={() => onReopen(task.id)}
+                  className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100"
+                >
+                  Reopen
+                </button>
+              )
+            )}
 
             <button
               type="button"
@@ -668,12 +691,15 @@ function TaskSection({
 export default function TasksPage() {
   const {
     tasks,
+    completedCount,
     loading,
     error,
     fetchTasks,
+    getCompletedTasks,
     createTask,
     updateTask,
     completeTask,
+    reopenTask,
     snoozeTask,
     deleteTask,
   } = useTaskStore();
@@ -683,6 +709,35 @@ export default function TasksPage() {
   const [completedOpen, setCompletedOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const [isFirstLoad, setIsFirstLoad] = useState(true);
+
+  const [completedTasks, setCompletedTasks] = useState<Task[]>([]);
+  const [completedLoading, setCompletedLoading] = useState(false);
+  const [hasMoreCompleted, setHasMoreCompleted] = useState(true);
+
+  const loadCompletedTasks = async (reset = false) => {
+    setCompletedLoading(true);
+    try {
+      const offset = reset ? 0 : completedTasks.length;
+      const data = await getCompletedTasks(50, offset);
+      if (reset) {
+        setCompletedTasks(data);
+        setHasMoreCompleted(data.length === 50);
+      } else {
+        setCompletedTasks((prev) => [...prev, ...data]);
+        setHasMoreCompleted(data.length === 50);
+      }
+    } catch (err: unknown) {
+      toast.error('Failed to load completed tasks');
+    } finally {
+      setCompletedLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (completedOpen && completedTasks.length === 0) {
+      loadCompletedTasks(true);
+    }
+  }, [completedOpen]);
 
   useEffect(() => {
     fetchTasks()
@@ -738,18 +793,6 @@ export default function TasksPage() {
     [tasks, todayEnd, upcomingEnd]
   );
 
-  const completedTasks = useMemo(
-    () =>
-      tasks
-        .filter((task) => task.status === 'completed')
-        .sort((left, right) => {
-          const leftTime = new Date(left.completedAt ?? left.createdAt).getTime();
-          const rightTime = new Date(right.completedAt ?? right.createdAt).getTime();
-          return rightTime - leftTime;
-        }),
-    [tasks]
-  );
-
   const totalBadgeCount = overdueTasks.length + todayTasks.length;
 
   const openCreateModal = () => {
@@ -788,8 +831,9 @@ export default function TasksPage() {
         toast.success('Task created');
       }
       closeModal();
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to save task');
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Failed to save task';
+      toast.error(errMsg);
     }
   };
 
@@ -797,8 +841,35 @@ export default function TasksPage() {
     try {
       await completeTask(taskId);
       toast.success('Task completed');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to complete task');
+
+      if (completedOpen) {
+        const completedTask = tasks.find((t) => t.id === taskId);
+        if (completedTask) {
+          const nowIso = new Date().toISOString();
+          setCompletedTasks((prev) => [
+            {
+              ...completedTask,
+              status: 'completed',
+              completedAt: nowIso,
+            },
+            ...prev,
+          ]);
+        }
+      }
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Failed to complete task';
+      toast.error(errMsg);
+    }
+  };
+
+  const handleReopen = async (taskId: number) => {
+    try {
+      await reopenTask(taskId);
+      toast.success('Task reopened');
+      setCompletedTasks((prev) => prev.filter((t) => t.id !== taskId));
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Failed to reopen task';
+      toast.error(errMsg);
     }
   };
 
@@ -807,8 +878,9 @@ export default function TasksPage() {
       const newDueDate = getSnoozedDueDate(days);
       await snoozeTask(taskId, newDueDate);
       toast.success(`Task snoozed ${days === 7 ? 'until next week' : `by ${days} day${days === 1 ? '' : 's'}`}`);
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to snooze task');
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Failed to snooze task';
+      toast.error(errMsg);
     }
   };
 
@@ -826,8 +898,10 @@ export default function TasksPage() {
     try {
       await deleteTask(taskId);
       toast.success('Task deleted');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to delete task');
+      setCompletedTasks((prev) => prev.filter((t) => t.id !== taskId));
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : 'Failed to delete task';
+      toast.error(errMsg);
     }
   };
 
@@ -863,11 +937,11 @@ export default function TasksPage() {
               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
-              + New Task
+              New Task
             </button>
           </div>
 
-          <div className="grid gap-3 px-6 py-5 sm:grid-cols-3">
+          <div className="grid gap-3 px-6 py-5 sm:grid-cols-4">
             <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-red-700">Overdue</p>
               <p className="mt-1 text-2xl font-bold text-red-900">{overdueTasks.length}</p>
@@ -879,6 +953,10 @@ export default function TasksPage() {
             <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Upcoming</p>
               <p className="mt-1 text-2xl font-bold text-blue-900">{upcomingTasks.length}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Completed</p>
+              <p className="mt-1 text-2xl font-bold text-emerald-900">{completedCount}</p>
             </div>
           </div>
         </header>
@@ -938,43 +1016,85 @@ export default function TasksPage() {
             onDelete={handleDelete}
           />
 
-          <details
-            open={completedOpen}
-            onToggle={(event) => setCompletedOpen(event.currentTarget.open)}
-            className={`rounded-2xl border bg-white shadow-sm ${getSectionAccent('completed')}`}
-          >
-            <summary className="cursor-pointer list-none px-5 py-4 select-none">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-sm font-semibold text-gray-900">Completed</h2>
-                  <p className="text-xs text-gray-500">{completedTasks.length} completed task{completedTasks.length === 1 ? '' : 's'}</p>
-                </div>
-                <span className="text-xs font-semibold text-emerald-700">{completedOpen ? 'Collapse' : 'Expand'}</span>
+          <div className={`rounded-2xl border bg-white shadow-sm overflow-hidden ${getSectionAccent('completed')}`}>
+            <button
+              type="button"
+              onClick={() => setCompletedOpen(!completedOpen)}
+              className="w-full flex items-center justify-between px-5 py-4 select-none hover:bg-emerald-50/20 transition-colors duration-150 text-left"
+            >
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-semibold text-gray-900">Completed</h2>
+                <span className="inline-flex items-center justify-center rounded-full bg-emerald-100 border border-emerald-200 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                  {completedCount}
+                </span>
               </div>
-            </summary>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-emerald-700">{completedOpen ? 'Collapse' : 'Expand'}</span>
+                <svg
+                  className={`w-4 h-4 text-emerald-700 transition-transform duration-200 ${completedOpen ? 'rotate-180' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </button>
 
-            <div className="border-t border-gray-100 p-5">
-              {completedTasks.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
-                  No completed tasks yet.
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {completedTasks.map((task) => (
-                    <TaskRow
-                      key={task.id}
-                      task={task}
-                      now={now}
-                      onComplete={handleComplete}
-                      onSnooze={handleSnooze}
-                      onEdit={handleEdit}
-                      onDelete={handleDelete}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          </details>
+            {completedOpen && (
+              <div className="border-t border-emerald-100 p-5 space-y-3">
+                {completedTasks.length === 0 ? (
+                  completedLoading ? (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600 mx-auto"></div>
+                      <p className="text-gray-500 text-sm mt-2">Loading completed tasks...</p>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-center text-sm text-gray-500">
+                      No completed tasks yet.
+                    </div>
+                  )
+                ) : (
+                  <>
+                    <div className="space-y-3">
+                      {completedTasks.map((task) => (
+                        <TaskRow
+                          key={task.id}
+                          task={task}
+                          now={now}
+                          onComplete={handleComplete}
+                          onSnooze={handleSnooze}
+                          onEdit={handleEdit}
+                          onDelete={handleDelete}
+                          onReopen={handleReopen}
+                        />
+                      ))}
+                    </div>
+
+                    {hasMoreCompleted && (
+                      <div className="flex justify-center pt-2">
+                        <button
+                          type="button"
+                          onClick={() => loadCompletedTasks(false)}
+                          disabled={completedLoading}
+                          className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 shadow-sm text-xs font-semibold rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:outline-none transition-colors disabled:opacity-50"
+                        >
+                          {completedLoading ? (
+                            <>
+                              <div className="animate-spin rounded-full h-3.5 w-3.5 border-b-2 border-gray-700 mr-2 animate-duration-1000"></div>
+                              Loading...
+                            </>
+                          ) : (
+                            'Show more'
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
