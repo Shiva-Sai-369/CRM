@@ -67,6 +67,7 @@ export async function POST(request: NextRequest) {
     data: {
       role: 'client',
       invited_to_project_id: projectId,
+      password_set: false  // Explicitly mark as first-time invite
     },
     redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? ''}/auth/callback`,
   });

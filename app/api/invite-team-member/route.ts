@@ -39,7 +39,10 @@ export async function POST(request: NextRequest) {
   // Send invite via Admin API (service role)
   const admin = createAdminClient();
   const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
-    data: { role: 'team_member' },
+    data: { 
+      role: 'team_member',
+      password_set: false  // Explicitly mark as first-time invite
+    },
     redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? ''}/auth/callback`,
   });
 

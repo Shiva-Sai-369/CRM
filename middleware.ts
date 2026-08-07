@@ -5,7 +5,7 @@ const NEXT_PUBLIC_SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const NEXT_PUBLIC_SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 /** Routes that are always public — no auth required. */
-const PUBLIC_ROUTES = new Set(['/login', '/auth/callback']);
+const PUBLIC_ROUTES = new Set(['/login', '/auth/callback', '/set-password']);
 
 /** Route prefixes always allowed through (Next internals, API, static). */
 const BYPASS_PREFIXES = ['/_next', '/favicon', '/api'];

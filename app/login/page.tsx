@@ -11,10 +11,7 @@ function getBrowserClient() {
   return createBrowserClient(supabaseUrl, supabaseAnonKey);
 }
 
-type Tab = 'password' | 'magic';
-
 export default function LoginPage() {
-  const [tab, setTab] = useState<Tab>('password');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -30,35 +27,68 @@ export default function LoginPage() {
     }
     startTransition(async () => {
       const supabase = getBrowserClient();
+      
+      console.log('[login] Attempting sign in with password...');
       const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+      
       if (authError) {
+        console.error('[login] Sign in failed:', authError);
         setError(authError.message);
-      } else {
-        // Middleware / callback will redirect based on role
-        window.location.href = '/auth/callback?next=/projects';
+        return;
       }
-    });
-  };
 
-  const handleMagicLink = () => {
-    setError(null);
-    setSuccessMsg(null);
-    if (!email) {
-      setError('Please enter your email address.');
-      return;
-    }
-    startTransition(async () => {
-      const supabase = getBrowserClient();
-      const { error: authError } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
-      });
-      if (authError) {
-        setError(authError.message);
+      console.log('[login] Sign in successful, fetching user profile...');
+
+      // Get authenticated user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        console.error('[login] Failed to get user after sign in:', userError);
+        setError('Authentication succeeded but failed to load user. Please try again.');
+        return;
+      }
+
+      // Fetch profile to determine role
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError || !profile) {
+        console.error('[login] Failed to fetch profile:', profileError);
+        setError('Failed to load user profile. Please try again.');
+        return;
+      }
+
+      console.log('[login] Profile loaded, role:', profile.role);
+
+      // Redirect based on role (same logic as callback route)
+      if (profile.role === 'client') {
+        // Fetch client's project assignments
+        const { data: assignments, error: assignError } = await supabase
+          .from('project_assignments')
+          .select('project_id')
+          .eq('user_id', user.id)
+          .limit(1);
+
+        if (assignError) {
+          console.error('[login] Failed to fetch project assignments:', assignError);
+          setError('Failed to load project assignments. Please try again.');
+          return;
+        }
+
+        const projectId = (assignments as Array<{ project_id: number }> | null)?.[0]?.project_id;
+        if (projectId) {
+          console.log('[login] Redirecting client to analytics:', projectId);
+          window.location.href = `/analytics/${projectId}`;
+        } else {
+          console.warn('[login] Client has no project assignments');
+          window.location.href = '/login?error=no_project';
+        }
       } else {
-        setSuccessMsg('Check your inbox — a magic link is on its way.');
+        // super_admin or team_member -> /projects
+        console.log('[login] Redirecting', profile.role, 'to /projects');
+        window.location.href = '/projects';
       }
     });
   };
@@ -85,33 +115,7 @@ export default function LoginPage() {
 
         {/* Card */}
         <div className="bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl p-8">
-          {/* Tab switcher */}
-          <div className="flex bg-gray-800 rounded-xl p-1 mb-6 gap-1">
-            <button
-              id="tab-password"
-              onClick={() => { setTab('password'); setError(null); setSuccessMsg(null); }}
-              className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all duration-200 ${
-                tab === 'password'
-                  ? 'bg-gray-700 text-white shadow-sm'
-                  : 'text-gray-400 hover:text-gray-200'
-              }`}
-            >
-              Password
-            </button>
-            <button
-              id="tab-magic-link"
-              onClick={() => { setTab('magic'); setError(null); setSuccessMsg(null); }}
-              className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all duration-200 ${
-                tab === 'magic'
-                  ? 'bg-gray-700 text-white shadow-sm'
-                  : 'text-gray-400 hover:text-gray-200'
-              }`}
-            >
-              Magic Link
-            </button>
-          </div>
-
-          {/* Email field (shared) */}
+          {/* Email field */}
           <div className="mb-4">
             <label htmlFor="login-email" className="block text-sm font-medium text-gray-300 mb-1.5">
               Email address
@@ -123,7 +127,7 @@ export default function LoginPage() {
               onChange={(e) => setEmail(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
-                  tab === 'password' ? handlePassword() : handleMagicLink();
+                  handlePassword();
                 }
               }}
               placeholder="you@company.com"
@@ -132,30 +136,22 @@ export default function LoginPage() {
             />
           </div>
 
-          {/* Password field — only for password tab */}
-          {tab === 'password' && (
-            <div className="mb-6">
-              <label htmlFor="login-password" className="block text-sm font-medium text-gray-300 mb-1.5">
-                Password
-              </label>
-              <input
-                id="login-password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handlePassword(); }}
-                placeholder="••••••••"
-                className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
-                autoComplete="current-password"
-              />
-            </div>
-          )}
-
-          {tab === 'magic' && (
-            <p className="text-xs text-gray-500 mb-6">
-              We&apos;ll email you a one-time sign-in link. No password needed.
-            </p>
-          )}
+          {/* Password field */}
+          <div className="mb-6">
+            <label htmlFor="login-password" className="block text-sm font-medium text-gray-300 mb-1.5">
+              Password
+            </label>
+            <input
+              id="login-password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handlePassword(); }}
+              placeholder="••••••••"
+              className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors"
+              autoComplete="current-password"
+            />
+          </div>
 
           {/* Error / success feedback */}
           {error && (
@@ -172,15 +168,11 @@ export default function LoginPage() {
           {/* CTA button */}
           <button
             id="btn-sign-in"
-            onClick={tab === 'password' ? handlePassword : handleMagicLink}
+            onClick={handlePassword}
             disabled={isPending}
             className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all duration-200 text-sm shadow-lg shadow-blue-600/20 hover:shadow-blue-500/30 active:scale-[0.98]"
           >
-            {isPending
-              ? 'Please wait…'
-              : tab === 'password'
-              ? 'Sign In'
-              : 'Send Magic Link'}
+            {isPending ? 'Please wait…' : 'Sign In'}
           </button>
 
           <p className="mt-5 text-center text-xs text-gray-600">
