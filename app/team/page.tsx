@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import type { TeamMemberWithAssignments } from '@/types/rbac';
 
@@ -13,69 +14,175 @@ interface Project {
 
 function InviteTeamMemberModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [createdAccount, setCreatedAccount] = useState<{ email: string; password: string } | null>(null);
+
+  const generatePassword = () => {
+    // Generate a random 12-character password
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%';
+    let pwd = '';
+    for (let i = 0; i < 12; i++) {
+      pwd += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setPassword(pwd);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim()) return;
+    if (!email.trim() || !password.trim()) return;
     setLoading(true);
     try {
       const res = await fetch('/api/invite-team-member', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
       });
-      const json = await res.json() as { error?: string };
-      if (!res.ok) throw new Error(json.error ?? 'Failed to send invite');
-      toast.success(`Invite sent to ${email}`);
-      onSuccess();
+      const json = await res.json() as { error?: string; email?: string; password?: string };
+      if (!res.ok) throw new Error(json.error ?? 'Failed to create account');
+      
+      // Show success with password
+      setCreatedAccount({ email: json.email!, password: json.password! });
+      toast.success(`Account created for ${email}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Something went wrong');
-    } finally {
       setLoading(false);
     }
+  };
+
+  const handleCopyPassword = () => {
+    if (createdAccount) {
+      navigator.clipboard.writeText(createdAccount.password);
+      toast.success('Password copied to clipboard');
+    }
+  };
+
+  const handleDone = () => {
+    setCreatedAccount(null);
+    setEmail('');
+    setPassword('');
+    setLoading(false);
+    onSuccess();
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
       <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-md p-6 shadow-2xl">
-        <h2 className="text-lg font-semibold text-white mb-1">Invite Team Member</h2>
-        <p className="text-sm text-gray-400 mb-5">
-          They&apos;ll receive an invite email and start with no project assignments.
-        </p>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="invite-tm-email" className="block text-sm text-gray-300 mb-1.5">
-              Email address
-            </label>
-            <input
-              id="invite-tm-email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="colleague@company.com"
-              className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div className="flex gap-3 pt-1">
+        {createdAccount ? (
+          // Success state - show password
+          <>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-green-500/20 rounded-full flex items-center justify-center">
+                <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-white">Account Created</h2>
+                <p className="text-sm text-gray-400">Share these credentials with the user</p>
+              </div>
+            </div>
+            
+            <div className="space-y-3 mb-5">
+              <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+                <p className="text-xs text-gray-400 mb-1">Email</p>
+                <p className="text-sm text-white font-medium">{createdAccount.email}</p>
+              </div>
+              <div className="bg-gray-800 border border-gray-700 rounded-xl p-4">
+                <p className="text-xs text-gray-400 mb-1">Password</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm text-white font-mono">{createdAccount.password}</p>
+                  <button
+                    onClick={handleCopyPassword}
+                    className="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded-lg transition-colors"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3 mb-4">
+              <p className="text-xs text-yellow-400">
+                <strong>Important:</strong> Save this password now. You won&apos;t be able to see it again.
+              </p>
+            </div>
+
             <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-2.5 rounded-xl border border-gray-700 text-gray-300 hover:bg-gray-800 text-sm transition-colors"
+              onClick={handleDone}
+              className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors"
             >
-              Cancel
+              Done
             </button>
-            <button
-              id="btn-send-tm-invite"
-              type="submit"
-              disabled={loading}
-              className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium transition-colors"
-            >
-              {loading ? 'Sending…' : 'Send Invite'}
-            </button>
-          </div>
-        </form>
+          </>
+        ) : (
+          // Create form
+          <>
+            <h2 className="text-lg font-semibold text-white mb-1">Create Team Member</h2>
+            <p className="text-sm text-gray-400 mb-5">
+              Create a new account with a password. No email will be sent.
+            </p>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="invite-tm-email" className="block text-sm text-gray-300 mb-1.5">
+                  Email address
+                </label>
+                <input
+                  id="invite-tm-email"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="colleague@company.com"
+                  className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label htmlFor="invite-tm-password" className="block text-sm text-gray-300 mb-1.5">
+                  Password (min. 8 characters)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="invite-tm-password"
+                    type="text"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Enter password"
+                    className="flex-1 px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={generatePassword}
+                    className="px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-gray-300 hover:text-white text-sm transition-colors"
+                    title="Generate password"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex-1 py-2.5 rounded-xl border border-gray-700 text-gray-300 hover:bg-gray-800 text-sm transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  id="btn-send-tm-invite"
+                  type="submit"
+                  disabled={loading}
+                  className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium transition-colors"
+                >
+                  {loading ? 'Creating…' : 'Create Account'}
+                </button>
+              </div>
+            </form>
+          </>
+        )}
       </div>
     </div>
   );
@@ -185,11 +292,14 @@ function AssignProjectModal({
 // ── Main Team Page ───────────────────────────────────────────────────────────
 
 export default function TeamPage() {
+  const router = useRouter();
   const [members, setMembers] = useState<TeamMemberWithAssignments[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [managingMember, setManagingMember] = useState<TeamMemberWithAssignments | null>(null);
+  const [deactivatingId, setDeactivatingId] = useState<string | null>(null);
+  const [reactivatingId, setReactivatingId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -263,24 +373,73 @@ export default function TeamPage() {
 
   const projectNameMap = Object.fromEntries(projects.map((p) => [p.id, p.name]));
 
+  const handleDeactivate = async (memberId: string, memberEmail: string) => {
+    setDeactivatingId(memberId);
+    try {
+      const res = await fetch('/api/deactivate-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: memberId }),
+      });
+      const json = await res.json() as { error?: string; message?: string };
+      if (!res.ok) throw new Error(json.error ?? 'Failed to deactivate');
+      toast.success(`${memberEmail} has been deactivated`);
+      loadMembers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setDeactivatingId(null);
+    }
+  };
+
+  const handleReactivate = async (memberId: string, memberEmail: string) => {
+    setReactivatingId(memberId);
+    try {
+      const res = await fetch('/api/reactivate-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: memberId }),
+      });
+      const json = await res.json() as { error?: string; message?: string };
+      if (!res.ok) throw new Error(json.error ?? 'Failed to reactivate');
+      toast.success(`${memberEmail} has been reactivated`);
+      loadMembers();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setReactivatingId(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-950 p-6">
       {/* Header */}
       <div className="mb-8 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white">Team Management</h1>
-          <p className="text-gray-400 text-sm mt-1">Invite team members and manage project assignments.</p>
+          <p className="text-gray-400 text-sm mt-1">Create team member accounts and manage project assignments.</p>
         </div>
-        <button
-          id="btn-invite-team-member"
-          onClick={() => setShowInviteModal(true)}
-          className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors shadow-lg shadow-blue-600/20"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-          </svg>
-          Invite Team Member
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => router.push('/team/manage')}
+            className="flex items-center gap-2 px-4 py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white text-sm font-medium rounded-xl transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+            </svg>
+            Manage All Users
+          </button>
+          <button
+            id="btn-invite-team-member"
+            onClick={() => setShowInviteModal(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-xl transition-colors shadow-lg shadow-blue-600/20"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+            </svg>
+            Add Team Member
+          </button>
+        </div>
       </div>
 
       {/* Stats strip */}
@@ -322,17 +481,37 @@ export default function TeamPage() {
             </thead>
             <tbody className="divide-y divide-gray-800">
               {members.map((m) => (
-                <tr key={m.id} className="hover:bg-gray-800/50 transition-colors">
+                <tr
+                  key={m.id}
+                  className={`transition-colors ${
+                    m.is_active
+                      ? 'hover:bg-gray-800/50'
+                      : 'bg-gray-900/50 opacity-60'
+                  }`}
+                >
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-blue-600/20 border border-blue-600/30 rounded-full flex items-center justify-center shrink-0">
-                        <span className="text-xs font-semibold text-blue-400">
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                          m.is_active
+                            ? 'bg-blue-600/20 border border-blue-600/30'
+                            : 'bg-gray-700/40 border border-gray-600/30'
+                        }`}
+                      >
+                        <span
+                          className={`text-xs font-semibold ${
+                            m.is_active ? 'text-blue-400' : 'text-gray-500'
+                          }`}
+                        >
                           {(m.full_name ?? m.email).charAt(0).toUpperCase()}
                         </span>
                       </div>
                       <div>
                         <p className="text-sm font-medium text-white">{m.full_name ?? '—'}</p>
                         <p className="text-xs text-gray-400">{m.email}</p>
+                        {!m.is_active && (
+                          <p className="text-xs text-red-400 mt-1 font-medium">Deactivated</p>
+                        )}
                       </div>
                     </div>
                   </td>
@@ -353,16 +532,46 @@ export default function TeamPage() {
                     )}
                   </td>
                   <td className="px-6 py-4 text-xs text-gray-500">
-                    {new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    {new Date(m.created_at).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <button
-                      id={`btn-manage-${m.id}`}
-                      onClick={() => setManagingMember(m)}
-                      className="text-xs px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white rounded-lg transition-colors"
-                    >
-                      Manage Projects
-                    </button>
+                    <div className="flex gap-2 justify-end">
+                      <button
+                        id={`btn-manage-${m.id}`}
+                        onClick={() => setManagingMember(m)}
+                        disabled={!m.is_active}
+                        className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                          m.is_active
+                            ? 'bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white'
+                            : 'bg-gray-800/50 border border-gray-700/50 text-gray-500 cursor-not-allowed'
+                        }`}
+                      >
+                        Manage Projects
+                      </button>
+                      {m.is_active ? (
+                        <button
+                          id={`btn-deactivate-${m.id}`}
+                          onClick={() => handleDeactivate(m.id, m.email)}
+                          disabled={deactivatingId === m.id}
+                          className="text-xs px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 hover:text-red-300 rounded-lg transition-colors disabled:opacity-50"
+                        >
+                          {deactivatingId === m.id ? 'Deactivating…' : 'Deactivate'}
+                        </button>
+                      ) : (
+                        <button
+                          id={`btn-reactivate-${m.id}`}
+                          onClick={() => handleReactivate(m.id, m.email)}
+                          disabled={reactivatingId === m.id}
+                          className="text-xs px-3 py-1.5 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 text-green-400 hover:text-green-300 rounded-lg transition-colors disabled:opacity-50"
+                        >
+                          {reactivatingId === m.id ? 'Reactivating…' : 'Reactivate'}
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

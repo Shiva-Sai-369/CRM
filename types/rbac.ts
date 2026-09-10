@@ -13,6 +13,7 @@ export interface TeamMemberWithAssignments {
   full_name: string | null;
   role: string;
   created_at: string;
+  is_active: boolean;
   assignments: Array<{
     id: number;
     user_id: string;

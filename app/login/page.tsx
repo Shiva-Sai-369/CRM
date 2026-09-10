@@ -1,15 +1,10 @@
 'use client';
 
-import { useState, useTransition } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { useState, useTransition, useMemo } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-
-function getBrowserClient() {
-  return createBrowserClient(supabaseUrl, supabaseAnonKey);
-}
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -17,6 +12,12 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  // Create a single Supabase client instance using useMemo
+  const supabase = useMemo(
+    () => createBrowserClient(supabaseUrl, supabaseAnonKey),
+    []
+  );
 
   const handlePassword = () => {
     setError(null);
@@ -26,14 +27,13 @@ export default function LoginPage() {
       return;
     }
     startTransition(async () => {
-      const supabase = getBrowserClient();
       
       console.log('[login] Attempting sign in with password...');
       const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
       
       if (authError) {
         console.error('[login] Sign in failed:', authError);
-        setError(authError.message);
+        setError('Invalid email or password.');
         return;
       }
 
@@ -176,7 +176,7 @@ export default function LoginPage() {
           </button>
 
           <p className="mt-5 text-center text-xs text-gray-600">
-            No public sign-up. Accounts are created by invitation only.
+            No public sign-up. Accounts are created by your admin.
           </p>
         </div>
       </div>

@@ -88,6 +88,7 @@ export interface Profile {
   full_name: string | null;
   role: string;
   created_at: string;
+  is_active: boolean;
 }
 
 export interface ProjectAssignment {

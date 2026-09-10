@@ -1,9 +1,9 @@
 /**
  * POST /api/invite-team-member
  * super_admin only.
- * Body: { email: string }
+ * Body: { email: string, password: string }
  *
- * Sends a Supabase invite email with role: 'team_member' in metadata.
+ * Creates a team_member account directly with password. No email sent.
  * New team_member starts with zero project assignments.
  */
 import { NextRequest, NextResponse } from 'next/server';
@@ -26,29 +26,43 @@ export async function POST(request: NextRequest) {
 
   // Parse body
   let email: string;
+  let password: string;
   try {
-    const body = await request.json() as { email?: unknown };
+    const body = await request.json() as { email?: unknown; password?: unknown };
     if (typeof body.email !== 'string' || !body.email.includes('@')) {
       throw new Error('invalid email');
     }
+    if (typeof body.password !== 'string' || body.password.length < 8) {
+      throw new Error('password must be at least 8 characters');
+    }
     email = body.email.trim().toLowerCase();
-  } catch {
-    return NextResponse.json({ error: 'Invalid request body. Expected { email: string }' }, { status: 400 });
+    password = body.password;
+  } catch (err) {
+    return NextResponse.json({ 
+      error: err instanceof Error ? err.message : 'Invalid request body. Expected { email: string, password: string }' 
+    }, { status: 400 });
   }
 
-  // Send invite via Admin API (service role)
+  // Create user directly with Admin API (service role)
   const admin = createAdminClient();
-  const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
-    data: { 
+  const { data, error } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { 
       role: 'team_member',
-      password_set: false  // Explicitly mark as first-time invite
+      password_set: true
     },
-    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? ''}/auth/callback`,
   });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true, userId: data.user.id }, { status: 200 });
+  return NextResponse.json({ 
+    success: true, 
+    userId: data.user.id,
+    email,
+    password  // Return password so admin can copy it
+  }, { status: 200 });
 }

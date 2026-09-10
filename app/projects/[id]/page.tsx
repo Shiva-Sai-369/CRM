@@ -26,69 +26,175 @@ function InviteClientModal({
   onClose: () => void;
 }) {
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [createdAccount, setCreatedAccount] = useState<{ email: string; password: string } | null>(null);
+
+  const generatePassword = () => {
+    // Generate a random 12-character password
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%';
+    let pwd = '';
+    for (let i = 0; i < 12; i++) {
+      pwd += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setPassword(pwd);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim()) return;
+    if (!email.trim() || !password.trim()) return;
     setLoading(true);
     try {
       const res = await fetch('/api/invite-client', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), projectId: Number(projectId) }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password, projectId: Number(projectId) }),
       });
-      const json = await res.json() as { error?: string };
-      if (!res.ok) throw new Error(json.error ?? 'Failed to send invite');
-      toast.success(`Client invite sent to ${email}`);
-      onClose();
+      const json = await res.json() as { error?: string; email?: string; password?: string };
+      if (!res.ok) throw new Error(json.error ?? 'Failed to create account');
+      
+      // Show success with password
+      setCreatedAccount({ email: json.email!, password: json.password! });
+      toast.success(`Client account created for ${email}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Something went wrong');
-    } finally {
       setLoading(false);
     }
+  };
+
+  const handleCopyPassword = () => {
+    if (createdAccount) {
+      navigator.clipboard.writeText(createdAccount.password);
+      toast.success('Password copied to clipboard');
+    }
+  };
+
+  const handleDone = () => {
+    setCreatedAccount(null);
+    setEmail('');
+    setPassword('');
+    setLoading(false);
+    onClose();
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
       <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl border border-gray-200">
-        <h2 className="text-lg font-semibold text-gray-900 mb-1">Invite Client</h2>
-        <p className="text-sm text-gray-500 mb-5">
-          The client will receive an email and get read-only analytics access to this project.
-        </p>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label htmlFor="invite-client-email" className="block text-sm text-gray-700 mb-1.5">
-              Client email address
-            </label>
-            <input
-              id="invite-client-email"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="client@company.com"
-              className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-gray-900 placeholder-gray-400 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div className="flex gap-3 pt-1">
+        {createdAccount ? (
+          // Success state - show password
+          <>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-green-50 rounded-full flex items-center justify-center border border-green-200">
+                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Client Account Created</h2>
+                <p className="text-sm text-gray-500">Share these credentials with the client</p>
+              </div>
+            </div>
+            
+            <div className="space-y-3 mb-5">
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                <p className="text-xs text-gray-500 mb-1">Email</p>
+                <p className="text-sm text-gray-900 font-medium">{createdAccount.email}</p>
+              </div>
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+                <p className="text-xs text-gray-500 mb-1">Password</p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm text-gray-900 font-mono">{createdAccount.password}</p>
+                  <button
+                    onClick={handleCopyPassword}
+                    className="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs rounded-lg transition-colors"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 mb-4">
+              <p className="text-xs text-yellow-800">
+                <strong>Important:</strong> Save this password now. You won&apos;t be able to see it again.
+              </p>
+            </div>
+
             <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-2.5 rounded-xl border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm transition-colors"
+              onClick={handleDone}
+              className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors"
             >
-              Cancel
+              Done
             </button>
-            <button
-              id="btn-send-client-invite"
-              type="submit"
-              disabled={loading}
-              className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium transition-colors"
-            >
-              {loading ? 'Sending…' : 'Send Invite'}
-            </button>
-          </div>
-        </form>
+          </>
+        ) : (
+          // Create form
+          <>
+            <h2 className="text-lg font-semibold text-gray-900 mb-1">Create Client Account</h2>
+            <p className="text-sm text-gray-500 mb-5">
+              Create a client account with read-only analytics access. No email will be sent.
+            </p>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="invite-client-email" className="block text-sm text-gray-700 mb-1.5">
+                  Client email address
+                </label>
+                <input
+                  id="invite-client-email"
+                  type="email"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="client@company.com"
+                  className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-gray-900 placeholder-gray-400 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label htmlFor="invite-client-password" className="block text-sm text-gray-700 mb-1.5">
+                  Password (min. 8 characters)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    id="invite-client-password"
+                    type="text"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Enter password"
+                    className="flex-1 px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-gray-900 placeholder-gray-400 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={generatePassword}
+                    className="px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-gray-600 hover:text-gray-900 text-sm transition-colors"
+                    title="Generate password"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div className="flex gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex-1 py-2.5 rounded-xl border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  id="btn-send-client-invite"
+                  type="submit"
+                  disabled={loading}
+                  className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium transition-colors"
+                >
+                  {loading ? 'Creating…' : 'Create Account'}
+                </button>
+              </div>
+            </form>
+          </>
+        )}
       </div>
     </div>
   );
@@ -292,7 +398,7 @@ export default function ProjectDetailPage() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
               </svg>
-              Invite Client
+              Add Client
             </button>
           </div>
         )}
