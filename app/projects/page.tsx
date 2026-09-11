@@ -94,7 +94,19 @@ export default function ProjectsPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => { 
+    refresh(); 
+    
+    // Listen for storage changes from other tabs/windows
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'crmProjects') {
+        refresh();
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, [refresh]);
 
   const handleOpen = (project: DisplayProject) => {
     if (project.source === 'local') {
