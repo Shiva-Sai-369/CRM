@@ -1,6 +1,14 @@
 import { create } from "zustand";
-import { getSupabaseClient } from "@/lib/supabase";
+import { createBrowserClient } from '@supabase/ssr';
 import type { GoogleSheet, Project, SheetLead, LeadNote } from "@/types/supabase";
+
+// Create a function to get the SSR browser client
+function getSupabaseClient() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
 
 async function fetchNotesForLeads(
   supabase: ReturnType<typeof getSupabaseClient>,
@@ -104,17 +112,86 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const supabase = getSupabaseClient();
-      const { data, error } = await supabase
-        .from("projects")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        throw error;
+      
+      // Get current user and their role
+      const { data: { user } } = await supabase.auth.getUser();
+      console.log('[fetchProjects] Current user:', user?.id, user?.email);
+      
+      if (!user) {
+        console.log('[fetchProjects] No user found, setting empty projects');
+        set({ projects: [], loading: false });
+        return;
       }
 
-      set({ projects: (data ?? []) as Project[], loading: false });
+      // Fetch user profile to get role
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      console.log('[fetchProjects] Profile:', profile, 'Error:', profileError);
+
+      const userRole = (profile as { role?: string } | null)?.role;
+      console.log('[fetchProjects] User role:', userRole);
+
+      let projects: Project[] = [];
+
+      // Super admins see all projects
+      if (userRole === 'super_admin') {
+        console.log('[fetchProjects] Fetching all projects for super_admin');
+        const { data, error } = await supabase
+          .from("projects")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (error) {
+          console.error('[fetchProjects] Error fetching all projects:', error);
+          throw error;
+        }
+        projects = (data ?? []) as Project[];
+        console.log('[fetchProjects] Found projects for super_admin:', projects.length);
+      } else {
+        // Team members and clients only see assigned projects
+        console.log('[fetchProjects] Fetching assignments for user:', user.id);
+        const { data: assignments, error: assignErr } = await supabase
+          .from("project_assignments")
+          .select("project_id")
+          .eq("user_id", user.id);
+
+        console.log('[fetchProjects] Assignments:', assignments, 'Error:', assignErr);
+
+        if (assignErr) {
+          console.error('[fetchProjects] Error fetching assignments:', assignErr);
+          throw assignErr;
+        }
+
+        const projectIds = (assignments ?? []).map((a: { project_id: number }) => a.project_id);
+        console.log('[fetchProjects] Project IDs from assignments:', projectIds);
+
+        if (projectIds.length > 0) {
+          console.log('[fetchProjects] Fetching projects with IDs:', projectIds);
+          const { data, error } = await supabase
+            .from("projects")
+            .select("*")
+            .in("id", projectIds)
+            .order("created_at", { ascending: false });
+
+          if (error) {
+            console.error('[fetchProjects] Error fetching projects by IDs:', error);
+            throw error;
+          }
+          projects = (data ?? []) as Project[];
+          console.log('[fetchProjects] Found assigned projects:', projects.length, projects);
+        } else {
+          console.log('[fetchProjects] No project assignments found for user');
+        }
+      }
+
+      console.log('[fetchProjects] Final projects to set:', projects);
+      set({ projects, loading: false });
     } catch (err) {
+      console.error('[fetchProjects] Exception:', err);
       set({ error: getErrorMessage(err), loading: false });
     }
   },

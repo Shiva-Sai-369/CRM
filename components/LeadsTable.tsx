@@ -247,7 +247,6 @@ export default function LeadsTable({ leads, loading, onAddLeadClick }: LeadsTabl
 
   const handleColumnFilter = (column: SortColumn) => {
     // This will open the filter dropdown for the specific column
-    console.log(`Filter ${column}`);
     // You can implement column-specific filtering here
   };
 

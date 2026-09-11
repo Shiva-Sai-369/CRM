@@ -82,6 +82,23 @@ export interface NotificationLog {
   sent_at: string | null;
 }
 
+export interface Profile {
+  id: string;
+  email: string;
+  full_name: string | null;
+  role: string;
+  created_at: string;
+  is_active: boolean;
+}
+
+export interface ProjectAssignment {
+  id: number;
+  user_id: string;
+  project_id: number;
+  created_at: string;
+}
+
+
 export type Database = {
   public: {
     Tables: {
@@ -174,6 +191,18 @@ export type Database = {
             referencedColumns: ["id"];
           }
         ];
+      };
+      profiles: {
+        Row: Profile;
+        Insert: Omit<Profile, 'id' | 'created_at'> & { id?: string; created_at?: string };
+        Update: Partial<Profile>;
+        Relationships: [];
+      };
+      project_assignments: {
+        Row: ProjectAssignment;
+        Insert: Omit<ProjectAssignment, 'id' | 'created_at'> & { id?: number; created_at?: string };
+        Update: Partial<ProjectAssignment>;
+        Relationships: [];
       };
     };
     Views: { [_ in never]: never };

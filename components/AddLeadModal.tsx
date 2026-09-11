@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import toast from "react-hot-toast";
 import { X, Loader2, AlertCircle } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
+import { createBrowserClient } from '@supabase/ssr';
 
 interface AddLeadModalProps {
   isOpen: boolean;
@@ -16,33 +17,18 @@ export default function AddLeadModal({
   onClose,
   selectedProjectId,
 }: AddLeadModalProps) {
-  const { sheets, projects, createLeadManually } = useProjectStore();
+  const { projects, createLeadManually } = useProjectStore();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [company, setCompany] = useState("");
   const [status, setStatus] = useState("new");
-  const [sheetId, setSheetId] = useState("");
+  const [projectId, setProjectId] = useState("");
   const [notes, setNotes] = useState("");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  // Filter sheets based on current project scope
-  const filteredSheets = useMemo(() => {
-    if (selectedProjectId === null || selectedProjectId === "all") {
-      return sheets;
-    }
-    return sheets.filter((s) => s.project_id === selectedProjectId);
-  }, [sheets, selectedProjectId]);
-
-  // Find project name for display in Sheet dropdown when in "All Projects"
-  const getProjectName = (projId: number | null) => {
-    if (!projId) return "";
-    const p = projects.find((proj) => proj.id === projId);
-    return p ? ` (${p.name})` : "";
-  };
 
   // Reset form fields on open
   useEffect(() => {
@@ -55,14 +41,17 @@ export default function AddLeadModal({
       setNotes("");
       setErrorMsg(null);
       
-      // Auto-select sheet if there's only one option
-      if (filteredSheets.length === 1) {
-        setSheetId(String(filteredSheets[0].id));
+      // Auto-select project if we're already viewing a specific project
+      if (selectedProjectId && selectedProjectId !== "all") {
+        setProjectId(String(selectedProjectId));
+      } else if (projects.length === 1) {
+        // Or auto-select if there's only one project
+        setProjectId(String(projects[0].id));
       } else {
-        setSheetId("");
+        setProjectId("");
       }
     }
-  }, [isOpen, filteredSheets]);
+  }, [isOpen, selectedProjectId, projects]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,21 +67,69 @@ export default function AddLeadModal({
       return;
     }
 
-    if (!sheetId) {
-      toast.error("Please select a Sheet");
+    if (!projectId) {
+      toast.error("Please select a Project");
       return;
     }
 
     setIsSubmitting(true);
 
     try {
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      );
+
+      // Get or create a default sheet for this project
+      let sheetId: number;
+      
+      // Check if project has a "Manual Leads" sheet
+      const { data: existingSheets, error: fetchError } = await supabase
+        .from('google_sheets')
+        .select('id')
+        .eq('project_id', Number(projectId))
+        .eq('name', 'Manual Leads')
+        .limit(1);
+
+      if (fetchError) {
+        console.error('Error fetching sheets:', fetchError);
+        throw new Error('Failed to check project sheets');
+      }
+
+      if (existingSheets && existingSheets.length > 0) {
+        // Use existing "Manual Leads" sheet
+        sheetId = existingSheets[0].id;
+      } else {
+        // Create a new "Manual Leads" sheet for this project
+        const { data: newSheet, error: createError } = await supabase
+          .from('google_sheets')
+          .insert({
+            project_id: Number(projectId),
+            name: 'Manual Leads',
+            sheet_name: 'Manual Leads',
+            sheet_id: null,
+            tab_gid: null,
+            csv_url: null,
+          })
+          .select('id')
+          .single();
+
+        if (createError || !newSheet) {
+          console.error('Error creating sheet:', createError);
+          throw new Error('Failed to create Manual Leads sheet');
+        }
+
+        sheetId = newSheet.id;
+      }
+
+      // Now create the lead
       const result = await createLeadManually({
         name: name.trim(),
         email: email.trim(),
         phone: phone.trim(),
         company: company.trim(),
         status,
-        sheet_id: Number(sheetId),
+        sheet_id: sheetId,
         notes: notes.trim() || undefined,
       });
 
@@ -206,30 +243,33 @@ export default function AddLeadModal({
                 />
               </div>
 
-              {/* Sheet Assignment */}
+              {/* Project Assignment */}
               <div className="md:col-span-2">
                 <label className="block text-sm font-semibold text-gray-700 mb-1">
-                  Assign to Sheet <span className="text-red-500">*</span>
+                  Assign to Project <span className="text-red-500">*</span>
                 </label>
                 <select
                   required
-                  value={sheetId}
-                  onChange={(e) => setSheetId(e.target.value)}
+                  value={projectId}
+                  onChange={(e) => setProjectId(e.target.value)}
                   disabled={isSubmitting}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm disabled:opacity-50"
                 >
-                  <option value="">Select a Google Sheet...</option>
-                  {filteredSheets.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name} ({s.sheet_name}){getProjectName(s.project_id)}
+                  <option value="">Select a Project...</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
                     </option>
                   ))}
                 </select>
-                {filteredSheets.length === 0 && (
+                {projects.length === 0 && (
                   <p className="text-xs text-red-500 mt-1">
-                    No active sheets found. Please connect a sheet in Settings first.
+                    No projects found. Please create a project first.
                   </p>
                 )}
+                <p className="text-xs text-gray-500 mt-1">
+                  Lead will be added to a &quot;Manual Leads&quot; sheet within this project
+                </p>
               </div>
 
               {/* Status */}
@@ -281,7 +321,7 @@ export default function AddLeadModal({
               </button>
               <button
                 type="submit"
-                disabled={isSubmitting || filteredSheets.length === 0}
+                disabled={isSubmitting || projects.length === 0}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold flex items-center gap-1.5"
               >
                 {isSubmitting ? (
