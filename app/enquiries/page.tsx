@@ -322,11 +322,14 @@ function EnquiriesContent() {
               className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="all">All Projects</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
+              {projects.map((p) => {
+                const isLocalStorage = (p as any)._localStorage === true;
+                return (
+                  <option key={p.id} value={p.id}>
+                    {p.name} {isLocalStorage ? '📂 (Local)' : ''}
+                  </option>
+                );
+              })}
             </select>
 
             <label className="text-sm font-semibold text-gray-700">Sheet:</label>
@@ -337,14 +340,23 @@ function EnquiriesContent() {
                 setSelectedSheetId(value === "all" ? "all" : Number(value));
               }}
               className="px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={sheets.length === 0}
             >
-              <option value="all">All sheets</option>
+              <option value="all">
+                {sheets.length === 0 ? 'No sheets available' : 'All sheets'}
+              </option>
               {sheets.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name} ({s.sheet_name})
                 </option>
               ))}
             </select>
+            
+            {selectedProjectId && selectedProjectId !== "all" && sheets.length === 0 && projects.find(p => p.id === selectedProjectId && (p as any)._localStorage) && (
+              <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200">
+                📂 This is a localStorage project. Sheets are managed in Settings.
+              </span>
+            )}
           </div>
         </div>
 

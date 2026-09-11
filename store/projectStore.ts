@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { createBrowserClient } from '@supabase/ssr';
 import type { GoogleSheet, Project, SheetLead, LeadNote } from "@/types/supabase";
+import { getProjects as getLocalProjects } from '@/lib/projectStorage';
 
 // Create a function to get the SSR browser client
 function getSupabaseClient() {
@@ -135,7 +136,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       const userRole = (profile as { role?: string } | null)?.role;
       console.log('[fetchProjects] User role:', userRole);
 
-      let projects: Project[] = [];
+      let supabaseProjects: Project[] = [];
 
       // Super admins see all projects
       if (userRole === 'super_admin') {
@@ -149,8 +150,8 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
           console.error('[fetchProjects] Error fetching all projects:', error);
           throw error;
         }
-        projects = (data ?? []) as Project[];
-        console.log('[fetchProjects] Found projects for super_admin:', projects.length);
+        supabaseProjects = (data ?? []) as Project[];
+        console.log('[fetchProjects] Found Supabase projects for super_admin:', supabaseProjects.length);
       } else {
         // Team members and clients only see assigned projects
         console.log('[fetchProjects] Fetching assignments for user:', user.id);
@@ -181,15 +182,39 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
             console.error('[fetchProjects] Error fetching projects by IDs:', error);
             throw error;
           }
-          projects = (data ?? []) as Project[];
-          console.log('[fetchProjects] Found assigned projects:', projects.length, projects);
+          supabaseProjects = (data ?? []) as Project[];
+          console.log('[fetchProjects] Found assigned Supabase projects:', supabaseProjects.length, supabaseProjects);
         } else {
           console.log('[fetchProjects] No project assignments found for user');
         }
       }
 
-      console.log('[fetchProjects] Final projects to set:', projects);
-      set({ projects, loading: false });
+      // Also fetch localStorage projects (from Google Sheets assignment flow)
+      const localProjects = getLocalProjects();
+      console.log('[fetchProjects] Found localStorage projects:', localProjects.length);
+      
+      // Convert localStorage projects to Supabase Project format (with negative IDs to avoid conflicts)
+      // Use negative IDs so they don't conflict with Supabase numeric IDs
+      const localAsSupabase: Project[] = localProjects.map((lp, index) => ({
+        id: -(index + 1), // Negative IDs for localStorage projects
+        name: lp.name,
+        description: lp.description,
+        created_at: lp.createdAt,
+        updated_at: lp.updatedAt,
+        _localStorage: true, // Mark as localStorage project
+        _localId: lp.id, // Store original UUID
+      } as Project & { _localStorage?: boolean; _localId?: string }));
+
+      // Merge: Supabase projects first, then localStorage projects
+      const allProjects = [...supabaseProjects, ...localAsSupabase];
+      
+      // Sort by created_at descending
+      allProjects.sort((a, b) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+
+      console.log('[fetchProjects] Total merged projects:', allProjects.length);
+      set({ projects: allProjects, loading: false });
     } catch (err) {
       console.error('[fetchProjects] Exception:', err);
       set({ error: getErrorMessage(err), loading: false });
