@@ -33,6 +33,12 @@ export default function SettingsPage() {
   });
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
 
+  // ── Display name state ──
+  const [displayName, setDisplayName] = useState('');
+  const [originalDisplayName, setOriginalDisplayName] = useState('');
+  const [savingDisplayName, setSavingDisplayName] = useState(false);
+  const [displayNameError, setDisplayNameError] = useState('');
+
   // ── Saved tabs (shared between both sections) ──
   const [tabs, setTabs] = useState<SheetTab[]>([]);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -58,7 +64,7 @@ export default function SettingsPage() {
     setTabs(getSheetTabs());
     setPublicInput(getPublicSheetId());
     
-    // Get current user email for password change
+    // Get current user email and profile for password change and display name
     const fetchUser = async () => {
       const supabase = createBrowserClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -67,12 +73,70 @@ export default function SettingsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setCurrentUserEmail(user.email || null);
+        
+        // Fetch profile for display name
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('full_name')
+          .eq('id', user.id)
+          .single();
+        
+        if (profile) {
+          const name = (profile as { full_name: string | null }).full_name || '';
+          setDisplayName(name);
+          setOriginalDisplayName(name);
+        }
       }
     };
     fetchUser();
   }, []);
 
   const refreshTabs = () => setTabs(getSheetTabs());
+
+  // ── Display name handlers ──
+  const handleSaveDisplayName = async () => {
+    setDisplayNameError('');
+    
+    const trimmedName = displayName.trim();
+    
+    if (!trimmedName) {
+      setDisplayNameError('Display name cannot be empty');
+      return;
+    }
+    
+    if (trimmedName.length > 100) {
+      setDisplayNameError('Display name must be 100 characters or less');
+      return;
+    }
+    
+    if (trimmedName === originalDisplayName) {
+      toast.success('No changes to save');
+      return;
+    }
+    
+    setSavingDisplayName(true);
+    
+    try {
+      const res = await fetch('/api/update-display-name', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ displayName: trimmedName }),
+      });
+      
+      const json = await res.json() as { error?: string; message?: string };
+      
+      if (!res.ok) {
+        throw new Error(json.error ?? 'Failed to update display name');
+      }
+      
+      toast.success('Display name updated successfully');
+      setOriginalDisplayName(trimmedName);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setSavingDisplayName(false);
+    }
+  };
 
   // ── Password change handlers ──
   const validatePasswordFields = (): boolean => {
@@ -291,8 +355,87 @@ export default function SettingsPage() {
         <div className="bg-white border-b border-gray-200 px-6 py-4 rounded-lg shadow-sm">
           <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Manage your account security and Google Sheets connections.
+            Manage your profile, account security and Google Sheets connections.
           </p>
+        </div>
+
+        {/* ══ PROFILE SETTINGS SECTION ══ */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
+            <h2 className="text-sm font-semibold text-gray-900">Profile Settings</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Update your display name visible to others in the system.
+            </p>
+          </div>
+
+          <div className="p-6 space-y-4">
+            {/* Email (Read-only) */}
+            <div>
+              <label htmlFor="user-email-display" className="block text-sm font-medium text-gray-700 mb-1">
+                Email Address
+              </label>
+              <input
+                id="user-email-display"
+                type="email"
+                value={currentUserEmail || ''}
+                readOnly
+                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-gray-500 text-sm cursor-not-allowed"
+              />
+              <p className="text-xs text-gray-500 mt-1">Your email address cannot be changed</p>
+            </div>
+
+            {/* Display Name */}
+            <div>
+              <label htmlFor="display-name" className="block text-sm font-medium text-gray-700 mb-1">
+                Display Name
+              </label>
+              <input
+                id="display-name"
+                type="text"
+                value={displayName}
+                onChange={(e) => {
+                  setDisplayName(e.target.value);
+                  setDisplayNameError('');
+                }}
+                maxLength={100}
+                placeholder="Enter your full name"
+                className={`${inputClass} ${displayNameError ? 'border-red-500 focus:ring-red-500' : ''}`}
+              />
+              {displayNameError && (
+                <p className="text-xs text-red-600 mt-1">{displayNameError}</p>
+              )}
+              <p className="text-xs text-gray-500 mt-1">
+                This name will be visible to other users in the team management pages
+              </p>
+            </div>
+
+            {/* Save Button */}
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={handleSaveDisplayName}
+                disabled={savingDisplayName || displayName.trim() === originalDisplayName}
+                className={`${btnPrimary} ${displayName.trim() === originalDisplayName ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                {savingDisplayName ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Save Display Name
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* ══ CHANGE PASSWORD SECTION ══ */}
