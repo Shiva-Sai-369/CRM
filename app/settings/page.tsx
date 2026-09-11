@@ -19,6 +19,15 @@ import {
   discoverPublicSheetTabs,
   type DiscoveredTab,
 } from '@/lib/services/fetchLeads';
+import {
+  getProjects,
+  createProject,
+  addSheetToProject,
+  getTabProjectCount,
+  removeSheetFromProject,
+  getProjectSheets,
+  type Project,
+} from '@/lib/projectStorage';
 
 export default function SettingsPage() {
   // ── Password change state ──
@@ -43,6 +52,16 @@ export default function SettingsPage() {
   const [tabs, setTabs] = useState<SheetTab[]>([]);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  
+  // ── Project linking state ──
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [showProjectModal, setShowProjectModal] = useState(false);
+  const [selectedTabForProject, setSelectedTabForProject] = useState<SheetTab | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+  const [newProjectName, setNewProjectName] = useState('');
+  const [newProjectDescription, setNewProjectDescription] = useState('');
+  const [creatingNewProject, setCreatingNewProject] = useState(false);
+  const [linkingToProject, setLinkingToProject] = useState(false);
 
   // ── Section 1: Public sheet ──
   const [publicInput, setPublicInput]     = useState('');
@@ -63,6 +82,7 @@ export default function SettingsPage() {
   useEffect(() => {
     setTabs(getSheetTabs());
     setPublicInput(getPublicSheetId());
+    setProjects(getProjects());
     
     // Get current user email and profile for password change and display name
     const fetchUser = async () => {
@@ -91,7 +111,10 @@ export default function SettingsPage() {
     fetchUser();
   }, []);
 
-  const refreshTabs = () => setTabs(getSheetTabs());
+  const refreshTabs = () => {
+    setTabs(getSheetTabs());
+    setProjects(getProjects());
+  };
 
   // ── Display name handlers ──
   const handleSaveDisplayName = async () => {
@@ -274,11 +297,27 @@ export default function SettingsPage() {
   const handleSavePublicTabs = () => {
     const toSave = discoveredTabs.filter(t => selectedGids.has(t.gid));
     if (toSave.length === 0) { toast.error('Select at least one tab'); return; }
-    toSave.forEach(t => saveSheetTab({ name: t.name, url: t.csvUrl }));
+    
+    // Save all tabs first
+    const savedTabs = toSave.map(t => saveSheetTab({ name: t.name, url: t.csvUrl }));
+    
     refreshTabs();
     setDiscoveredTabs([]);
     setSelectedGids(new Set());
+    
     toast.success(`${toSave.length} tab${toSave.length > 1 ? 's' : ''} saved`);
+    
+    // If only one tab saved, auto-open project selector
+    if (savedTabs.length === 1) {
+      setSelectedTabForProject(savedTabs[0]);
+      setShowProjectModal(true);
+    } else {
+      // Multiple tabs - show message
+      toast('Assign tabs to projects in the Saved Tabs section below', {
+        duration: 4000,
+        icon: '📋',
+      });
+    }
   };
 
   // ── Private sheet handlers ──
@@ -310,12 +349,86 @@ export default function SettingsPage() {
       return;
     }
 
-    saveSheetTab({ name: privateName.trim(), url: privateUrl.trim() });
+    const savedTab = saveSheetTab({ name: privateName.trim(), url: privateUrl.trim() });
     refreshTabs();
     setPrivateName('');
     setPrivateUrl('');
     setTestResult(null);
     toast.success(`"${privateName.trim()}" saved`);
+    
+    // Auto-open project selector
+    setSelectedTabForProject(savedTab);
+    setShowProjectModal(true);
+  };
+  
+  // ── Project linking handlers ──
+  const openProjectSelector = (tab: SheetTab) => {
+    setSelectedTabForProject(tab);
+    setSelectedProjectId('');
+    setNewProjectName('');
+    setNewProjectDescription('');
+    setCreatingNewProject(false);
+    setShowProjectModal(true);
+  };
+  
+  const handleLinkToProject = async () => {
+    if (!selectedTabForProject) return;
+    
+    setLinkingToProject(true);
+    
+    try {
+      let projectId = selectedProjectId;
+      
+      // Create new project if needed
+      if (creatingNewProject) {
+        if (!newProjectName.trim()) {
+          toast.error('Enter a project name');
+          setLinkingToProject(false);
+          return;
+        }
+        
+        const newProject = createProject(newProjectName.trim(), newProjectDescription.trim());
+        projectId = newProject.id;
+        toast.success(`Project "${newProject.name}" created`);
+      }
+      
+      if (!projectId) {
+        toast.error('Select a project');
+        setLinkingToProject(false);
+        return;
+      }
+      
+      // Link tab to project
+      const result = addSheetToProject(projectId, {
+        id: selectedTabForProject.id,
+        name: selectedTabForProject.name,
+        url: selectedTabForProject.url,
+      });
+      
+      if (result) {
+        toast.success(`Sheet linked to project`);
+      } else {
+        toast('Sheet already linked to this project', { icon: 'ℹ️' });
+      }
+      
+      refreshTabs();
+      setShowProjectModal(false);
+      setSelectedTabForProject(null);
+      setSelectedProjectId('');
+      setNewProjectName('');
+      setNewProjectDescription('');
+      setCreatingNewProject(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to link sheet');
+    } finally {
+      setLinkingToProject(false);
+    }
+  };
+  
+  const handleUnlinkFromProject = (tabId: string, projectId: string) => {
+    removeSheetFromProject(projectId, tabId);
+    refreshTabs();
+    toast.success('Sheet unlinked from project');
   };
 
   // ── Saved tabs handlers ──
@@ -797,72 +910,274 @@ export default function SettingsPage() {
             </div>
           ) : (
             <div className="divide-y divide-gray-100">
-              {tabs.map((tab, index) => (
-                <div
-                  key={tab.id}
-                  className="flex items-center gap-3 px-6 py-4 hover:bg-gray-50 transition-colors"
-                >
-                  <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center flex-shrink-0">
-                    {index + 1}
-                  </span>
+              {tabs.map((tab, index) => {
+                const tabProjectLinks = projects.filter(p => {
+                  const projectSheets = getProjectSheets(p.id);
+                  return projectSheets.some(ps => ps.tabId === tab.id);
+                });
+                const projectCount = getTabProjectCount(tab.id);
+                
+                return (
+                  <div
+                    key={tab.id}
+                    className="px-6 py-4 hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+                        {index + 1}
+                      </span>
 
-                  <div className="flex-1 min-w-0">
-                    {renamingId === tab.id ? (
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={renameValue}
-                          onChange={e => setRenameValue(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') handleRenameConfirm(tab);
-                            if (e.key === 'Escape') setRenamingId(null);
-                          }}
-                          className="px-2 py-1 border border-blue-400 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-44"
-                          autoFocus
-                        />
+                      <div className="flex-1 min-w-0">
+                        {renamingId === tab.id ? (
+                          <div className="flex items-center gap-2 mb-2">
+                            <input
+                              type="text"
+                              value={renameValue}
+                              onChange={e => setRenameValue(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') handleRenameConfirm(tab);
+                                if (e.key === 'Escape') setRenamingId(null);
+                              }}
+                              className="px-2 py-1 border border-blue-400 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-44"
+                              autoFocus
+                            />
+                            <button
+                              onClick={() => handleRenameConfirm(tab)}
+                              className="text-xs text-blue-600 font-medium hover:text-blue-800"
+                            >
+                              Save
+                            </button>
+                            <button
+                              onClick={() => setRenamingId(null)}
+                              className="text-xs text-gray-400 hover:text-gray-600"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <p className="text-sm font-semibold text-gray-800 truncate mb-1">
+                            {tab.name}
+                          </p>
+                        )}
+                        <p className="text-xs text-gray-400 truncate mb-2">{tab.url}</p>
+                        
+                        {/* Project assignments */}
+                        {projectCount > 0 ? (
+                          <div className="flex flex-wrap gap-1.5 mb-2">
+                            {tabProjectLinks.map(project => (
+                              <span
+                                key={project.id}
+                                className="inline-flex items-center gap-1.5 px-2 py-1 bg-purple-50 text-purple-700 border border-purple-200 rounded text-xs font-medium"
+                              >
+                                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                  <path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" />
+                                </svg>
+                                {project.name}
+                                <button
+                                  onClick={() => handleUnlinkFromProject(tab.id, project.id)}
+                                  className="ml-0.5 hover:text-purple-900"
+                                  title="Unlink from project"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="mb-2">
+                            <span className="text-xs text-gray-400 italic">Not assigned to any project</span>
+                          </div>
+                        )}
+                        
                         <button
-                          onClick={() => handleRenameConfirm(tab)}
-                          className="text-xs text-blue-600 font-medium hover:text-blue-800"
+                          onClick={() => openProjectSelector(tab)}
+                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
                         >
-                          Save
-                        </button>
-                        <button
-                          onClick={() => setRenamingId(null)}
-                          className="text-xs text-gray-400 hover:text-gray-600"
-                        >
-                          Cancel
+                          + Assign to Project
                         </button>
                       </div>
-                    ) : (
-                      <p className="text-sm font-semibold text-gray-800 truncate">
-                        {tab.name}
-                      </p>
-                    )}
-                    <p className="text-xs text-gray-400 truncate mt-0.5">{tab.url}</p>
-                  </div>
 
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <button
-                      onClick={() => {
-                        setRenamingId(tab.id);
-                        setRenameValue(tab.name);
-                      }}
-                      className="text-xs text-gray-500 hover:text-gray-800 px-2 py-1 rounded hover:bg-gray-200 transition-colors"
-                    >
-                      Rename
-                    </button>
-                    <button
-                      onClick={() => handleDelete(tab)}
-                      className="text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50 transition-colors"
-                    >
-                      Remove
-                    </button>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button
+                          onClick={() => {
+                            setRenamingId(tab.id);
+                            setRenameValue(tab.name);
+                          }}
+                          className="text-xs text-gray-500 hover:text-gray-800 px-2 py-1 rounded hover:bg-gray-200 transition-colors"
+                        >
+                          Rename
+                        </button>
+                        <button
+                          onClick={() => handleDelete(tab)}
+                          className="text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded hover:bg-red-50 transition-colors"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
+
+        {/* ══ PROJECT ASSIGNMENT MODAL ══ */}
+        {showProjectModal && selectedTabForProject && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+              <div className="px-6 py-4 border-b border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Assign to Project
+                </h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  Link &quot;{selectedTabForProject.name}&quot; to a project
+                </p>
+              </div>
+
+              <div className="p-6 space-y-4">
+                {/* Toggle between existing and new project */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setCreatingNewProject(false)}
+                    className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      !creatingNewProject
+                        ? 'bg-blue-100 text-blue-700 border-2 border-blue-500'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    Select Existing
+                  </button>
+                  <button
+                    onClick={() => setCreatingNewProject(true)}
+                    className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      creatingNewProject
+                        ? 'bg-blue-100 text-blue-700 border-2 border-blue-500'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    Create New
+                  </button>
+                </div>
+
+                {creatingNewProject ? (
+                  /* Create new project form */
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Project Name <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={newProjectName}
+                        onChange={e => setNewProjectName(e.target.value)}
+                        placeholder="e.g. Better Castings"
+                        className={inputClass}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Description (optional)
+                      </label>
+                      <textarea
+                        value={newProjectDescription}
+                        onChange={e => setNewProjectDescription(e.target.value)}
+                        placeholder="Brief project description..."
+                        rows={3}
+                        className={inputClass}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  /* Select existing project */
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Choose Project <span className="text-red-500">*</span>
+                    </label>
+                    {projects.length === 0 ? (
+                      <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg text-center">
+                        <p className="text-sm text-gray-500 mb-2">No projects yet</p>
+                        <button
+                          onClick={() => setCreatingNewProject(true)}
+                          className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                          Create your first project
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-60 overflow-y-auto border border-gray-200 rounded-lg p-2">
+                        {projects.map(project => (
+                          <label
+                            key={project.id}
+                            className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                              selectedProjectId === project.id
+                                ? 'bg-blue-50 border-2 border-blue-500'
+                                : 'bg-gray-50 border border-gray-200 hover:bg-gray-100'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="project"
+                              value={project.id}
+                              checked={selectedProjectId === project.id}
+                              onChange={() => setSelectedProjectId(project.id)}
+                              className="mt-0.5"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900">{project.name}</p>
+                              {project.description && (
+                                <p className="text-xs text-gray-500 mt-0.5 truncate">{project.description}</p>
+                              )}
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowProjectModal(false);
+                    setSelectedTabForProject(null);
+                    setSelectedProjectId('');
+                    setNewProjectName('');
+                    setNewProjectDescription('');
+                    setCreatingNewProject(false);
+                  }}
+                  disabled={linkingToProject}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleLinkToProject}
+                  disabled={linkingToProject || (!creatingNewProject && !selectedProjectId) || (creatingNewProject && !newProjectName.trim())}
+                  className={btnPrimary}
+                >
+                  {linkingToProject ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                      Linking...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      {creatingNewProject ? 'Create & Link' : 'Link to Project'}
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

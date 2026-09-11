@@ -34,23 +34,23 @@ export default function StatsStrip({ leads }: StatsStripProps) {
 
   return (
     <div className="mb-4">
-      {/* Total Leads - Full Width */}
-      <div className="mb-3">
-        <div className="p-4 rounded-lg border bg-white border-l-4 border-blue-600 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold mb-1 uppercase text-gray-500 tracking-widest">TOTAL LEADS</p>
-              <p className="text-4xl font-black text-gray-900">{totalLeads}</p>
-            </div>
-            <svg className="w-12 h-12 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+      {/* All Stats in a Single Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+        {/* Total Leads - First Box */}
+        <div className="p-4 rounded-xl bg-white border-l-4 border-blue-600 shadow-sm hover:shadow-md transition-shadow">
+          <p className="text-xs font-semibold uppercase text-gray-500 tracking-wider truncate">
+            TOTAL LEADS
+          </p>
+          <div className="flex items-center justify-between mt-2">
+            <p className="text-2xl font-bold text-gray-900">{totalLeads}</p>
+            <svg className="w-8 h-8 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
               <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
             </svg>
           </div>
+          <p className="text-xs text-gray-400 mt-1">100%</p>
         </div>
-      </div>
 
-      {/* Status Breakdown - Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+        {/* Status Breakdown */}
         {sortedStatuses.map(({ status, count, borderColor }) => (
           <div
             key={status}
