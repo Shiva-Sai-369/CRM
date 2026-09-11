@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
+import { createBrowserClient } from '@supabase/ssr';
 import {
   getSheetTabs,
   saveSheetTab,
@@ -20,6 +21,18 @@ import {
 } from '@/lib/services/fetchLeads';
 
 export default function SettingsPage() {
+  // ── Password change state ──
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordErrors, setPasswordErrors] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+
   // ── Saved tabs (shared between both sections) ──
   const [tabs, setTabs] = useState<SheetTab[]>([]);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -44,9 +57,121 @@ export default function SettingsPage() {
   useEffect(() => {
     setTabs(getSheetTabs());
     setPublicInput(getPublicSheetId());
+    
+    // Get current user email for password change
+    const fetchUser = async () => {
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      );
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setCurrentUserEmail(user.email || null);
+      }
+    };
+    fetchUser();
   }, []);
 
   const refreshTabs = () => setTabs(getSheetTabs());
+
+  // ── Password change handlers ──
+  const validatePasswordFields = (): boolean => {
+    const errors = {
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: '',
+    };
+
+    if (!currentPassword) {
+      errors.currentPassword = 'Current password is required';
+    }
+
+    if (!newPassword) {
+      errors.newPassword = 'New password is required';
+    } else if (newPassword.length < 8) {
+      errors.newPassword = 'Password must be at least 8 characters';
+    }
+
+    if (!confirmPassword) {
+      errors.confirmPassword = 'Please confirm your new password';
+    } else if (newPassword !== confirmPassword) {
+      errors.confirmPassword = 'Passwords do not match';
+    }
+
+    setPasswordErrors(errors);
+    return !errors.currentPassword && !errors.newPassword && !errors.confirmPassword;
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Clear previous errors
+    setPasswordErrors({
+      currentPassword: '',
+      newPassword: '',
+      confirmPassword: '',
+    });
+
+    // Validate fields
+    if (!validatePasswordFields()) {
+      return;
+    }
+
+    if (!currentUserEmail) {
+      toast.error('Unable to determine current user');
+      return;
+    }
+
+    setChangingPassword(true);
+
+    try {
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      );
+
+      // Step 1: Re-authenticate with current password
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: currentUserEmail,
+        password: currentPassword,
+      });
+
+      if (authError) {
+        setPasswordErrors(prev => ({
+          ...prev,
+          currentPassword: 'Current password is incorrect',
+        }));
+        setChangingPassword(false);
+        return;
+      }
+
+      // Step 2: Update to new password
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (updateError) {
+        toast.error(updateError.message);
+        setChangingPassword(false);
+        return;
+      }
+
+      // Success
+      toast.success('Password changed successfully');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setPasswordErrors({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to change password');
+    } finally {
+      setChangingPassword(false);
+    }
+  };
 
   // ── Public sheet handlers ──
   const handleDiscover = async () => {
@@ -166,8 +291,125 @@ export default function SettingsPage() {
         <div className="bg-white border-b border-gray-200 px-6 py-4 rounded-lg shadow-sm">
           <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Connect your Google Sheets. Public and private sheets are merged together on the Enquiries page.
+            Manage your account security and Google Sheets connections.
           </p>
+        </div>
+
+        {/* ══ CHANGE PASSWORD SECTION ══ */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
+            <h2 className="text-sm font-semibold text-gray-900">Change Password</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Update your password. You&apos;ll remain logged in after changing your password.
+            </p>
+          </div>
+
+          <form onSubmit={handleChangePassword} className="p-6 space-y-4">
+            {/* Current Password */}
+            <div>
+              <label htmlFor="current-password" className="block text-sm font-medium text-gray-700 mb-1">
+                Current Password
+              </label>
+              <input
+                id="current-password"
+                type="password"
+                value={currentPassword}
+                onChange={(e) => {
+                  setCurrentPassword(e.target.value);
+                  setPasswordErrors(prev => ({ ...prev, currentPassword: '' }));
+                }}
+                className={`${inputClass} ${passwordErrors.currentPassword ? 'border-red-500 focus:ring-red-500' : ''}`}
+                placeholder="Enter your current password"
+              />
+              {passwordErrors.currentPassword && (
+                <p className="text-xs text-red-600 mt-1">{passwordErrors.currentPassword}</p>
+              )}
+            </div>
+
+            {/* New Password */}
+            <div>
+              <label htmlFor="new-password" className="block text-sm font-medium text-gray-700 mb-1">
+                New Password
+              </label>
+              <input
+                id="new-password"
+                type="password"
+                value={newPassword}
+                onChange={(e) => {
+                  setNewPassword(e.target.value);
+                  setPasswordErrors(prev => ({ ...prev, newPassword: '' }));
+                }}
+                className={`${inputClass} ${passwordErrors.newPassword ? 'border-red-500 focus:ring-red-500' : ''}`}
+                placeholder="Enter your new password"
+              />
+              {passwordErrors.newPassword && (
+                <p className="text-xs text-red-600 mt-1">{passwordErrors.newPassword}</p>
+              )}
+              {!passwordErrors.newPassword && newPassword.length > 0 && newPassword.length < 8 && (
+                <p className="text-xs text-yellow-600 mt-1">Password must be at least 8 characters</p>
+              )}
+            </div>
+
+            {/* Confirm Password */}
+            <div>
+              <label htmlFor="confirm-password" className="block text-sm font-medium text-gray-700 mb-1">
+                Confirm New Password
+              </label>
+              <input
+                id="confirm-password"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => {
+                  setConfirmPassword(e.target.value);
+                  setPasswordErrors(prev => ({ ...prev, confirmPassword: '' }));
+                }}
+                className={`${inputClass} ${passwordErrors.confirmPassword ? 'border-red-500 focus:ring-red-500' : ''}`}
+                placeholder="Confirm your new password"
+              />
+              {passwordErrors.confirmPassword && (
+                <p className="text-xs text-red-600 mt-1">{passwordErrors.confirmPassword}</p>
+              )}
+              {!passwordErrors.confirmPassword && confirmPassword && newPassword !== confirmPassword && (
+                <p className="text-xs text-yellow-600 mt-1">Passwords do not match</p>
+              )}
+            </div>
+
+            {/* Submit Button */}
+            <div className="pt-2">
+              <button
+                type="submit"
+                disabled={changingPassword}
+                className={btnPrimary}
+              >
+                {changingPassword ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Changing Password...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                    </svg>
+                    Change Password
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* Divider */}
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-300"></div>
+          </div>
+          <div className="relative flex justify-center text-sm">
+            <span className="px-3 bg-gray-50 text-gray-500 font-medium">Google Sheets Configuration</span>
+          </div>
         </div>
 
         {/* ══ SECTION 1 — PUBLIC SHEET ══ */}

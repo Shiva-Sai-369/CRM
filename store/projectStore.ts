@@ -104,16 +104,58 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const supabase = getSupabaseClient();
-      const { data, error } = await supabase
-        .from("projects")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        throw error;
+      
+      // Get current user and their role
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        set({ projects: [], loading: false });
+        return;
       }
 
-      set({ projects: (data ?? []) as Project[], loading: false });
+      // Fetch user profile to get role
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      const userRole = (profile as { role?: string } | null)?.role;
+
+      let projects: Project[] = [];
+
+      // Super admins see all projects
+      if (userRole === 'super_admin') {
+        const { data, error } = await supabase
+          .from("projects")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+        projects = (data ?? []) as Project[];
+      } else {
+        // Team members and clients only see assigned projects
+        const { data: assignments, error: assignErr } = await supabase
+          .from("project_assignments")
+          .select("project_id")
+          .eq("user_id", user.id);
+
+        if (assignErr) throw assignErr;
+
+        const projectIds = (assignments ?? []).map((a: { project_id: number }) => a.project_id);
+
+        if (projectIds.length > 0) {
+          const { data, error } = await supabase
+            .from("projects")
+            .select("*")
+            .in("id", projectIds)
+            .order("created_at", { ascending: false });
+
+          if (error) throw error;
+          projects = (data ?? []) as Project[];
+        }
+      }
+
+      set({ projects, loading: false });
     } catch (err) {
       set({ error: getErrorMessage(err), loading: false });
     }
