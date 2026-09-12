@@ -166,17 +166,8 @@ export default function LeadRow({
       await addNoteForLead(Number(lead.uniqueKey), newNoteText.trim());
       setNewNoteText("");
     } catch (err: any) {
-      console.error("Error adding note details:", err);
-      if (err && typeof err === "object") {
-        console.error("Supabase Error Details:", {
-          message: err.message,
-          details: err.details,
-          hint: err.hint,
-        });
-        setAddNoteError(err.message || "Failed to add note.");
-      } else {
-        setAddNoteError("An unknown error occurred.");
-      }
+      console.error("Error adding note:", err instanceof Error ? err.message : 'Unknown error');
+      setAddNoteError(err?.message || "Failed to add note.");
     } finally {
       setIsAddingNote(false);
     }

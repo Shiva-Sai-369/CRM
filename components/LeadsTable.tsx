@@ -20,6 +20,7 @@ interface LeadsTableProps {
 export default function LeadsTable({ leads, loading, onAddLeadClick }: LeadsTableProps) {
   const updateLeadStatus = useProjectStore((state) => state.updateLeadStatus);
   const updateLeadNotes = useProjectStore((state) => state.updateLeadNotes);
+  const leadNotes = useProjectStore((state) => state.leadNotes);
 
   const [sortColumn, setSortColumn] = useState<SortColumn>("lastMessageDate");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
@@ -151,7 +152,7 @@ export default function LeadsTable({ leads, loading, onAddLeadClick }: LeadsTabl
     const leadsToExport = selectedLeads.size > 0
       ? localLeads.filter(lead => selectedLeads.has(lead.uniqueKey))
       : localLeads;
-    exportLeadsToCSV(leadsToExport);
+    exportLeadsToCSV(leadsToExport, leadNotes);
   };
 
   const handlePageChange = (page: number) => {

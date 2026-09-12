@@ -12,6 +12,7 @@ import {
 import { getSheetTabs, type SheetTab } from '@/lib/config';
 import { getSupabaseClient } from '@/lib/supabase';
 import type { Project } from '@/types/project';
+import type { Database } from '@/types/supabase';
 
 // Unified display type that works for both sources
 interface DisplayProject {
@@ -30,8 +31,17 @@ async function fetchSupabaseProjects(): Promise<DisplayProject[]> {
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (error || !data) return [];
+    if (error) {
+      console.error('[Projects] Error fetching from Supabase:', error.message);
+      return [];
+    }
+    
+    if (!data || data.length === 0) {
+      console.log('[Projects] No Supabase projects found');
+      return [];
+    }
 
+    console.log('[Projects] Found Supabase projects:', data.length);
     return (data as any[]).map(p => ({
       id: String(p.id),
       name: p.name ?? '',
@@ -39,7 +49,8 @@ async function fetchSupabaseProjects(): Promise<DisplayProject[]> {
       createdAt: p.created_at ?? new Date().toISOString(),
       source: 'supabase' as const,
     }));
-  } catch {
+  } catch (err) {
+    console.error('[Projects] Exception fetching Supabase projects:', err);
     return [];
   }
 }
@@ -305,21 +316,43 @@ function CreateProjectModal({
       prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id]
     );
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     setError(null);
     try {
-      const project = createProject(name, description);
+      // Create Supabase project instead of localStorage
+      const supabase = getSupabaseClient();
+      const now = new Date().toISOString();
+      const { data, error } = await supabase
+        .from('projects')
+        .insert({
+          name: name.trim(),
+          description: description.trim() || null,
+          created_at: now,
+          updated_at: now,
+        })
+        .select('*')
+        .single();
+      
+      if (error) {
+        throw new Error(`Failed to create project: ${error.message}`);
+      }
+      
+      const project = data as { id: number; name: string; description: string | null };
+      
+      // Link selected tabs to localStorage mapping (for Settings UI)
+      // But the actual sync will use Supabase project ID
       selectedTabIds.forEach(tabId => {
         const tab = savedTabs.find(t => t.id === tabId);
         if (tab) {
-          addSheetToProject(project.id, {
+          addSheetToProject(String(project.id), {
             id: tab.id,
             name: tab.name,
             url: tab.url,
           });
         }
       });
-      toast.success(`Project "${project.name}" created`);
+      
+      toast.success(`Project "${project.name}" created in Supabase`);
       onCreated();
     } catch (err) {
       setError(

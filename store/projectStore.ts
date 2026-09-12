@@ -23,11 +23,7 @@ async function fetchNotesForLeads(
     .order("created_at", { ascending: false });
 
   if (notesErr) {
-    console.error("Supabase Error Details for notes bulk query:", {
-      message: notesErr.message,
-      details: notesErr.details,
-      hint: notesErr.hint
-    });
+    console.error("Error fetching notes:", notesErr.message);
     return {};
   }
 
@@ -116,10 +112,8 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
       
       // Get current user and their role
       const { data: { user } } = await supabase.auth.getUser();
-      console.log('[fetchProjects] Current user:', user?.id, user?.email);
       
       if (!user) {
-        console.log('[fetchProjects] No user found, setting empty projects');
         set({ projects: [], loading: false });
         return;
       }
@@ -131,47 +125,40 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
         .eq('id', user.id)
         .single();
 
-      console.log('[fetchProjects] Profile:', profile, 'Error:', profileError);
+      if (profileError) {
+        console.error('[fetchProjects] Profile error:', profileError.message);
+      }
 
       const userRole = (profile as { role?: string } | null)?.role;
-      console.log('[fetchProjects] User role:', userRole);
-
       let supabaseProjects: Project[] = [];
 
       // Super admins see all projects
       if (userRole === 'super_admin') {
-        console.log('[fetchProjects] Fetching all projects for super_admin');
         const { data, error } = await supabase
           .from("projects")
           .select("*")
           .order("created_at", { ascending: false });
 
         if (error) {
-          console.error('[fetchProjects] Error fetching all projects:', error);
+          console.error('[fetchProjects] Error fetching projects:', error.message);
           throw error;
         }
         supabaseProjects = (data ?? []) as Project[];
-        console.log('[fetchProjects] Found Supabase projects for super_admin:', supabaseProjects.length);
       } else {
         // Team members and clients only see assigned projects
-        console.log('[fetchProjects] Fetching assignments for user:', user.id);
         const { data: assignments, error: assignErr } = await supabase
           .from("project_assignments")
           .select("project_id")
           .eq("user_id", user.id);
 
-        console.log('[fetchProjects] Assignments:', assignments, 'Error:', assignErr);
-
         if (assignErr) {
-          console.error('[fetchProjects] Error fetching assignments:', assignErr);
+          console.error('[fetchProjects] Assignments error:', assignErr.message);
           throw assignErr;
         }
 
         const projectIds = (assignments ?? []).map((a: { project_id: number }) => a.project_id);
-        console.log('[fetchProjects] Project IDs from assignments:', projectIds);
 
         if (projectIds.length > 0) {
-          console.log('[fetchProjects] Fetching projects with IDs:', projectIds);
           const { data, error } = await supabase
             .from("projects")
             .select("*")
@@ -179,19 +166,15 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
             .order("created_at", { ascending: false });
 
           if (error) {
-            console.error('[fetchProjects] Error fetching projects by IDs:', error);
+            console.error('[fetchProjects] Error fetching assigned projects:', error.message);
             throw error;
           }
           supabaseProjects = (data ?? []) as Project[];
-          console.log('[fetchProjects] Found assigned Supabase projects:', supabaseProjects.length, supabaseProjects);
-        } else {
-          console.log('[fetchProjects] No project assignments found for user');
         }
       }
 
       // Also fetch localStorage projects (from Google Sheets assignment flow)
       const localProjects = getLocalProjects();
-      console.log('[fetchProjects] Found localStorage projects:', localProjects.length);
       
       // Convert localStorage projects to Supabase Project format (with negative IDs to avoid conflicts)
       // Use negative IDs so they don't conflict with Supabase numeric IDs
@@ -213,10 +196,9 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
 
-      console.log('[fetchProjects] Total merged projects:', allProjects.length);
       set({ projects: allProjects, loading: false });
     } catch (err) {
-      console.error('[fetchProjects] Exception:', err);
+      console.error('[fetchProjects] Error:', err instanceof Error ? err.message : 'Unknown error');
       set({ error: getErrorMessage(err), loading: false });
     }
   },
@@ -456,15 +438,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
         .limit(1);
 
       if (maxRowError) {
-        console.error("Supabase Error Details for max row query:", {
-          message: maxRowError.message,
-          details: maxRowError.details,
-          hint: maxRowError.hint
-        });
-        let detailedMsg = maxRowError.message;
-        if (maxRowError.details) detailedMsg += ` | Details: ${maxRowError.details}`;
-        if (maxRowError.hint) detailedMsg += ` | Hint: ${maxRowError.hint}`;
-        throw new Error(`Failed to compute row number: ${detailedMsg}`);
+        throw new Error(`Failed to compute row number: ${maxRowError.message}`);
       }
 
       if (maxRowData && maxRowData.length > 0) {
@@ -505,15 +479,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
         .single();
 
       if (error) {
-        console.error("Supabase Error Details for lead insert:", {
-          message: error.message,
-          details: error.details,
-          hint: error.hint
-        });
-        let detailedMsg = error.message;
-        if (error.details) detailedMsg += ` | Details: ${error.details}`;
-        if (error.hint) detailedMsg += ` | Hint: ${error.hint}`;
-        throw new Error(detailedMsg);
+        throw new Error(error.message);
       }
 
       const createdLead = data as SheetLead;
@@ -530,15 +496,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
           .single();
         
         if (notesError) {
-          console.error("Supabase Error Details for lead note insert:", {
-            message: notesError.message,
-            details: notesError.details,
-            hint: notesError.hint
-          });
-          let detailedMsg = notesError.message;
-          if (notesError.details) detailedMsg += ` | Details: ${notesError.details}`;
-          if (notesError.hint) detailedMsg += ` | Hint: ${notesError.hint}`;
-          throw new Error(`Lead created, but initial note failed: ${detailedMsg}`);
+          throw new Error(`Lead created, but initial note failed: ${notesError.message}`);
         }
         insertedNote = newNote as LeadNote;
       }

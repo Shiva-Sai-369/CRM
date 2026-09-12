@@ -21,6 +21,7 @@ import {
 } from '@/lib/services/fetchLeads';
 import {
   getProjects,
+  getProjects as getLocalProjects,
   createProject,
   addSheetToProject,
   getTabProjectCount,
@@ -62,6 +63,9 @@ export default function SettingsPage() {
   const [newProjectDescription, setNewProjectDescription] = useState('');
   const [creatingNewProject, setCreatingNewProject] = useState(false);
   const [linkingToProject, setLinkingToProject] = useState(false);
+  
+  // ── Sync to Supabase state ──
+  const [syncingTabId, setSyncingTabId] = useState<string | null>(null);
 
   // ── Section 1: Public sheet ──
   const [publicInput, setPublicInput]     = useState('');
@@ -80,9 +84,37 @@ export default function SettingsPage() {
   } | null>(null);
 
   useEffect(() => {
+    const fetchData = async () => {
+      // Fetch Supabase projects
+      const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      );
+      
+      const { data: supabaseProjects } = await supabase
+        .from('projects')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      // Convert Supabase projects to Project format
+      const supabaseAsProjects: Project[] = (supabaseProjects || []).map((p: any) => ({
+        id: String(p.id),
+        name: p.name,
+        description: p.description || '',
+        createdAt: p.created_at,
+        updatedAt: p.updated_at,
+      }));
+      
+      // Merge with localStorage projects
+      const localProjects = getLocalProjects();
+      const allProjects = [...supabaseAsProjects, ...localProjects];
+      
+      setProjects(allProjects);
+    };
+    
     setTabs(getSheetTabs());
     setPublicInput(getPublicSheetId());
-    setProjects(getProjects());
+    fetchData();
     
     // Get current user email and profile for password change and display name
     const fetchUser = async () => {
@@ -111,9 +143,30 @@ export default function SettingsPage() {
     fetchUser();
   }, []);
 
-  const refreshTabs = () => {
+  const refreshTabs = async () => {
     setTabs(getSheetTabs());
-    setProjects(getProjects());
+    
+    // Also refresh projects from Supabase
+    const supabase = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+    
+    const { data: supabaseProjects } = await supabase
+      .from('projects')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    const supabaseAsProjects: Project[] = (supabaseProjects || []).map((p: any) => ({
+      id: String(p.id),
+      name: p.name,
+      description: p.description || '',
+      createdAt: p.created_at,
+      updatedAt: p.updated_at,
+    }));
+    
+    const localProjects = getLocalProjects();
+    setProjects([...supabaseAsProjects, ...localProjects]);
   };
 
   // ── Display name handlers ──
@@ -429,6 +482,62 @@ export default function SettingsPage() {
     removeSheetFromProject(projectId, tabId);
     refreshTabs();
     toast.success('Sheet unlinked from project');
+  };
+  
+  const handleSyncToSupabase = async (tab: SheetTab) => {
+    // Must be linked to at least one project
+    const linkedProjects = projects.filter(p => {
+      const projectSheets = getProjectSheets(p.id);
+      return projectSheets.some(ps => ps.tabId === tab.id);
+    });
+    
+    if (linkedProjects.length === 0) {
+      toast.error('Please assign this sheet to a project first');
+      return;
+    }
+    
+    // Use the first linked project (or let user choose if multiple)
+    const project = linkedProjects[0];
+    
+    // CRITICAL: localStorage projects have negative/UUID IDs - need to create Supabase project first
+    if (!project.id || String(project.id).startsWith('-') || isNaN(Number(project.id)) || Number(project.id) <= 0) {
+      toast.error(
+        `"${project.name}" is a localStorage project. Create a real Supabase project first in the Projects page.`,
+        { duration: 6000 }
+      );
+      return;
+    }
+    
+    setSyncingTabId(tab.id);
+    
+    try {
+      const res = await fetch('/api/sync-sheet-to-supabase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sheetUrl: tab.url,
+          projectId: Number(project.id),
+          sheetName: tab.name,
+        }),
+      });
+      
+      const data = await res.json() as { 
+        error?: string; 
+        message?: string;
+        insertedRows?: number;
+        skippedRows?: number;
+      };
+      
+      if (!res.ok) {
+        throw new Error(data.error ?? 'Sync failed');
+      }
+      
+      toast.success(data.message || `Synced ${data.insertedRows || 0} leads`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Sync failed');
+    } finally {
+      setSyncingTabId(null);
+    }
   };
 
   // ── Saved tabs handlers ──
@@ -991,10 +1100,20 @@ export default function SettingsPage() {
                         
                         <button
                           onClick={() => openProjectSelector(tab)}
-                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                          className="text-xs text-blue-600 hover:text-blue-800 font-medium mr-3"
                         >
                           + Assign to Project
                         </button>
+                        
+                        {projectCount > 0 && (
+                          <button
+                            onClick={() => handleSyncToSupabase(tab)}
+                            disabled={syncingTabId === tab.id}
+                            className="text-xs text-green-600 hover:text-green-800 font-medium disabled:opacity-50"
+                          >
+                            {syncingTabId === tab.id ? '⏳ Syncing...' : '🔄 Sync to Supabase'}
+                          </button>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-1 flex-shrink-0">
