@@ -8,7 +8,6 @@ import FilterBar from "@/components/FilterBar";
 import StatsStrip from "@/components/StatsStrip";
 import LeadsTable from "@/components/LeadsTable";
 import AddLeadModal from "@/components/AddLeadModal";
-import LeadsDebugger from "@/components/LeadsDebugger";
 import type { Lead } from "@/lib/parseLeads";
 import { useProjectStore } from "@/store/projectStore";
 import type { GoogleSheet, SheetLead } from "@/types/supabase";
@@ -439,9 +438,6 @@ function EnquiriesContent() {
         onClose={() => setIsAddModalOpen(false)}
         selectedProjectId={selectedProjectId}
       />
-
-      {/* Debug tool - only shows in development */}
-      {process.env.NODE_ENV === 'development' && <LeadsDebugger />}
     </div>
   );
 }
