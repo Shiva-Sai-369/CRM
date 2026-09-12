@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
+import Papa from 'papaparse';
 
 /**
  * API Route: POST /api/sync-sheet-to-supabase
@@ -21,6 +22,12 @@ interface SheetRow {
   Status?: string;
   Timestamp?: string;
   Platform?: string;
+  // Facebook Lead Ads format
+  created_time?: string;
+  id?: string;
+  ad_id?: string;
+  form_id?: string;
+  field_data?: string; // JSON string containing actual lead data
   [key: string]: any;
 }
 
@@ -66,7 +73,20 @@ export async function POST(req: NextRequest) {
     }
 
     const csvText = await response.text();
-    const rows = parseCSV(csvText);
+    
+    console.log('[sync] CSV text length:', csvText.length);
+    console.log('[sync] First 200 chars:', csvText.substring(0, 200));
+    
+    // Parse CSV using Papa.parse (handles quoted fields with commas correctly)
+    const parseResult = Papa.parse<SheetRow>(csvText, {
+      header: true,
+      skipEmptyLines: true,
+    });
+    
+    const rows = parseResult.data;
+    
+    console.log('[sync] Parsed rows count:', rows.length);
+    console.log('[sync] First row sample:', rows[0]);
 
     if (rows.length === 0) {
       return NextResponse.json(
@@ -80,7 +100,7 @@ export async function POST(req: NextRequest) {
       .from('google_sheets')
       .select('id')
       .eq('project_id', projectId)
-      .eq('sheet_url', sheetUrl)
+      .eq('spreadsheet_id', sheetUrl)
       .maybeSingle();
 
     let sheetId: number;
@@ -97,14 +117,16 @@ export async function POST(req: NextRequest) {
         .eq('id', sheetId);
     } else {
       // Create new google_sheets entry
+      const now = new Date().toISOString();
       const { data: newSheet, error: sheetError } = await supabase
         .from('google_sheets')
         .insert({
           project_id: projectId,
           name: sheetName,
           sheet_name: sheetName,
-          sheet_url: sheetUrl,
-          sheet_id: extractSheetId(sheetUrl) || sheetUrl,
+          spreadsheet_id: sheetUrl,
+          created_at: now,
+          updated_at: now,
         })
         .select('id')
         .single();
@@ -116,40 +138,157 @@ export async function POST(req: NextRequest) {
       sheetId = newSheet.id;
     }
 
+    // Auto-assign current user to project for access (if not already assigned)
+    const { data: existingAssignment } = await supabase
+      .from('project_assignments')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('project_id', projectId)
+      .maybeSingle();
+
+    if (!existingAssignment) {
+      const { error: assignError } = await supabase
+        .from('project_assignments')
+        .insert({
+          user_id: user.id,
+          project_id: projectId,
+          created_at: new Date().toISOString()
+        });
+      
+      if (assignError) {
+        console.warn('[sync-sheet-to-supabase] Failed to auto-assign project:', assignError.message);
+        // Don't fail the sync, just log the warning
+      } else {
+        console.log('[sync-sheet-to-supabase] Auto-assigned user to project:', projectId);
+      }
+    }
+
     // Get existing leads to avoid duplicates
     const { data: existingLeads } = await supabase
       .from('sheet_leads')
       .select('email, phone')
       .eq('sheet_id', sheetId);
 
+    console.log('[sync] Existing leads count:', existingLeads?.length || 0);
+    
     const existingEmails = new Set(existingLeads?.map(l => l.email?.toLowerCase()) || []);
     const existingPhones = new Set(existingLeads?.map(l => l.phone) || []);
+    
+    console.log('[sync] Existing emails:', existingEmails.size);
+    console.log('[sync] Existing phones:', existingPhones.size);
 
     // Prepare leads for insertion
     const leadsToInsert: any[] = [];
     let rowNumber = (existingLeads?.length || 0) + 1;
+    let duplicateCount = 0;
+    let emptyRowCount = 0;
 
-    for (const row of rows) {
-      const email = row.Email?.trim().toLowerCase() || null;
-      const phone = row.Phone?.trim() || null;
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+      const row = rows[rowIndex];
+      
+      // Parse lead data - support both standard format and Facebook Lead Ads format
+      let email: string | null = null;
+      let phone: string | null = null;
+      let name: string | null = null;
+      let company: string | null = null;
+      let status: string = 'new';
+      let createdAt: string = new Date().toISOString();
+      let parseMode: string = 'unknown';
+
+      // Check if this is Facebook Lead Ads format (has field_data column)
+      if (row.field_data) {
+        parseMode = 'field_data';
+        const flatData = parseFacebookFieldData(row.field_data, rowIndex);
+        
+        if (flatData) {
+          // Extract fields using same alternative names as lib/parseLeads.ts
+          email = flatData.email || null;
+          phone = flatData.phone_number || null;
+          name = flatData.full_name || null;
+          company = flatData.company || null;
+          
+          // Use created_time from row if available
+          if (row.created_time) {
+            createdAt = row.created_time;
+          }
+          
+          console.log(`[sync] Row ${rowIndex} parsed via field_data:`, { name, email, phone, company });
+        } else {
+          // Parsing failed, skip this row
+          emptyRowCount++;
+          continue;
+        }
+      } else {
+        // Standard format - direct columns
+        // Support both capital case (Name, Email, Phone) and Facebook format (full_name, email, phone_number)
+        parseMode = 'flat';
+        
+        // Try standard column names first, then Facebook alternative names
+        name = row.Name?.trim() || row.full_name?.trim() || null;
+        email = (row.Email?.trim() || row.email?.trim())?.toLowerCase() || null;
+        
+        // Phone might have Facebook prefix like "p:+918367630604" - strip it
+        let rawPhone = row.Phone?.trim() || row.phone_number?.trim() || null;
+        if (rawPhone && rawPhone.startsWith('p:')) {
+          phone = rawPhone.substring(2);
+        } else {
+          phone = rawPhone;
+        }
+        
+        company = row.Company?.trim() || row.company?.trim() || null;
+        status = (row.Status?.trim() || row.lead_status?.trim() || 'new').toLowerCase();
+        createdAt = row.Timestamp || row.created_time || new Date().toISOString();
+        
+        console.log(`[sync] Row ${rowIndex} parsed via flat columns:`, { name, email, phone, company });
+      }
+
+      // Skip completely empty rows
+      if (!email && !phone && !name) {
+        console.log(`[sync] Row ${rowIndex} skipped: empty (mode: ${parseMode})`);
+        emptyRowCount++;
+        continue;
+      }
 
       // Skip if duplicate
-      if (email && existingEmails.has(email)) continue;
-      if (phone && existingPhones.has(phone)) continue;
+      if (email && existingEmails.has(email)) {
+        duplicateCount++;
+        console.log(`[sync] Row ${rowIndex} skipped: duplicate email: ${email}`);
+        continue;
+      }
+      if (phone && existingPhones.has(phone)) {
+        duplicateCount++;
+        console.log(`[sync] Row ${rowIndex} skipped: duplicate phone: ${phone}`);
+        continue;
+      }
+
+      // Log before insertion
+      console.log(`[sync] Row ${rowIndex} adding to insert queue (mode: ${parseMode}):`, {
+        name,
+        email,
+        phone,
+        company,
+        status,
+      });
 
       leadsToInsert.push({
         sheet_id: sheetId,
-        name: row.Name?.trim() || null,
+        name: name,
         email: email,
         phone: phone,
-        company: row.Company?.trim() || null,
-        status: (row.Status?.trim().toLowerCase() || 'new'),
+        company: company,
+        status: status,
         row_number: rowNumber++,
         raw_data: row,
         notified: false,
-        created_at: row.Timestamp || new Date().toISOString(),
+        created_at: createdAt,
+        updated_at: createdAt,
       });
     }
+    
+    console.log('[sync] Leads to insert:', leadsToInsert.length);
+    console.log('[sync] Duplicates skipped:', duplicateCount);
+    console.log('[sync] Empty rows skipped:', emptyRowCount);
+    console.log('[sync] Sample lead to insert:', leadsToInsert[0]);
 
     // Insert leads in batches of 100
     let insertedCount = 0;
@@ -169,6 +308,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    console.log('[sync] ✅ Sync complete:', {
+      totalRows: rows.length,
+      inserted: insertedCount,
+      skipped: rows.length - insertedCount,
+    });
+
     return NextResponse.json({
       success: true,
       message: `Synced ${insertedCount} new leads`,
@@ -176,6 +321,8 @@ export async function POST(req: NextRequest) {
       totalRows: rows.length,
       insertedRows: insertedCount,
       skippedRows: rows.length - insertedCount,
+      duplicates: duplicateCount,
+      emptyRows: emptyRowCount,
     });
 
   } catch (error) {
@@ -187,54 +334,55 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Helper: Parse CSV text to array of objects
-function parseCSV(csvText: string): SheetRow[] {
-  const lines = csvText.trim().split('\n');
-  if (lines.length < 2) return [];
-
-  const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-  const rows: SheetRow[] = [];
-
-  for (let i = 1; i < lines.length; i++) {
-    const values = parseCSVLine(lines[i]);
-    if (values.length === 0) continue;
-
-    const row: SheetRow = {};
-    headers.forEach((header, index) => {
-      row[header] = values[index]?.trim() || '';
-    });
-
-    rows.push(row);
-  }
-
-  return rows;
-}
-
-// Helper: Parse a single CSV line (handles quoted values)
-function parseCSVLine(line: string): string[] {
-  const result: string[] = [];
-  let current = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-
-    if (char === '"') {
-      inQuotes = !inQuotes;
-    } else if (char === ',' && !inQuotes) {
-      result.push(current);
-      current = '';
+/**
+ * Parse Facebook Lead Ads field_data JSON format
+ * 
+ * Format: [{"name":"full_name","values":["John Doe"]},{"name":"email","values":["x@y.com"]}]
+ * 
+ * @param fieldDataStr - JSON string or already-parsed object
+ * @param rowIndex - Row index for error logging
+ * @returns Flat object with field names as keys, or null if parsing fails
+ */
+function parseFacebookFieldData(fieldDataStr: any, rowIndex: number): Record<string, string> | null {
+  try {
+    let fieldData;
+    
+    // field_data might already be parsed as an object by Papa.parse
+    if (typeof fieldDataStr === 'string') {
+      fieldData = JSON.parse(fieldDataStr);
+    } else if (typeof fieldDataStr === 'object') {
+      fieldData = fieldDataStr;
     } else {
-      current += char;
+      console.error(`[sync] Row ${rowIndex}: field_data has unexpected type:`, typeof fieldDataStr);
+      return null;
     }
+    
+    // Convert array format to flat lookup object
+    if (!Array.isArray(fieldData)) {
+      console.error(`[sync] Row ${rowIndex}: field_data is not an array after parsing`);
+      return null;
+    }
+    
+    const flatData: Record<string, string> = {};
+    
+    for (const field of fieldData) {
+      if (!field.name) continue;
+      
+      const fieldName = field.name;
+      const fieldValue = Array.isArray(field.values) ? field.values[0] : field.values || '';
+      
+      flatData[fieldName] = String(fieldValue).trim();
+    }
+    
+    return flatData;
+    
+  } catch (error) {
+    const truncated = String(fieldDataStr).substring(0, 200);
+    console.error(
+      `[sync] Row ${rowIndex}: Failed to parse field_data:`,
+      error instanceof Error ? error.message : error,
+      '\nRaw field_data (truncated):', truncated
+    );
+    return null;
   }
-
-  result.push(current);
-  return result.map(v => v.replace(/^"|"$/g, ''));
-}
-
-// Helper: Extract Sheet ID from URL
-function extractSheetId(url: string): string | null {
-  const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
-  return match ? match[1] : null;
 }
