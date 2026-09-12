@@ -177,7 +177,7 @@ export default function Sidebar() {
             </svg>
           </div>
           <div>
-            <h1 className="text-lg font-semibold text-white">CRM Dashboard</h1>
+            <h1 className="text-lg font-semibold text-white">Webrocket CRM</h1>
             <p className="text-xs text-gray-400">Lead Management</p>
           </div>
         </div>

@@ -8,6 +8,7 @@ import FilterBar from "@/components/FilterBar";
 import StatsStrip from "@/components/StatsStrip";
 import LeadsTable from "@/components/LeadsTable";
 import AddLeadModal from "@/components/AddLeadModal";
+import LeadsDebugger from "@/components/LeadsDebugger";
 import type { Lead } from "@/lib/parseLeads";
 import { useProjectStore } from "@/store/projectStore";
 import type { GoogleSheet, SheetLead } from "@/types/supabase";
@@ -220,6 +221,33 @@ function EnquiriesContent() {
 
   return (
     <div className="p-6">
+      {/* No Projects Warning - Only show if authenticated (middleware ensures this) */}
+      {projects.length === 0 && !loading && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 mb-6">
+          <div className="flex items-start gap-4">
+            <div className="flex-shrink-0">
+              <svg className="w-8 h-8 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-yellow-900 mb-2">No Projects Accessible</h3>
+              <p className="text-yellow-700 mb-2">
+                You don't have access to any projects. This could mean:
+              </p>
+              <ul className="list-disc list-inside text-yellow-700 space-y-1 mb-4">
+                <li>You haven't been assigned to any projects yet</li>
+                <li>No projects have been created in the system</li>
+                <li>Your role doesn't allow project access</li>
+              </ul>
+              <p className="text-yellow-700 text-sm">
+                Contact your administrator or create a project in the <a href="/projects" className="underline font-semibold">Projects page</a>.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="w-full mb-6 bg-white border-b border-gray-200 px-6 py-4 rounded-lg shadow-sm">
         <div className="flex items-center justify-between">
@@ -411,6 +439,9 @@ function EnquiriesContent() {
         onClose={() => setIsAddModalOpen(false)}
         selectedProjectId={selectedProjectId}
       />
+
+      {/* Debug tool - only shows in development */}
+      {process.env.NODE_ENV === 'development' && <LeadsDebugger />}
     </div>
   );
 }
