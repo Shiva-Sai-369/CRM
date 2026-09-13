@@ -120,12 +120,7 @@ export default function ProjectsPage() {
   }, [refresh]);
 
   const handleOpen = (project: DisplayProject) => {
-    if (project.source === 'local') {
-      router.push(`/projects/${project.id}`);
-    } else {
-      // Supabase project detail not built yet — show toast
-      toast('Supabase project detail coming soon', { icon: 'ℹ️' });
-    }
+    router.push(`/projects/${project.id}`);
   };
 
   const handleDelete = async (project: DisplayProject, e: React.MouseEvent) => {
