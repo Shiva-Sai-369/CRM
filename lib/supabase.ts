@@ -173,6 +173,21 @@ const mockSupabaseClient = {
         return Promise.resolve({ data: [], error: null });
       }
     };
+  },
+  auth: {
+    signInWithPassword: async (credentials: any) => {
+      // Always return success for mock
+      return { error: null, data: { user: { id: 'mock-user-id', email: credentials.email } } };
+    },
+    getUser: async () => {
+      return { 
+        data: { user: { id: 'mock-user-id', email: 'mock@example.com' } }, 
+        error: null 
+      };
+    },
+    signOut: async () => {
+      return { error: null };
+    }
   }
 } as any;
 
