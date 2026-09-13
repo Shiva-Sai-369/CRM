@@ -27,8 +27,8 @@ import {
   getTabProjectCount,
   removeSheetFromProject,
   getProjectSheets,
-  type Project,
 } from '@/lib/projectStorage';
+import type { Project } from '@/types/project';
 
 export default function SettingsPage() {
   // ── Password change state ──

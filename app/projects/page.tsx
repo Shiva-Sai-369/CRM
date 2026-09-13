@@ -37,11 +37,11 @@ async function fetchSupabaseProjects(): Promise<DisplayProject[]> {
     }
     
     if (!data || data.length === 0) {
-      console.log('[Projects] No Supabase projects found');
+      // console.log('[Projects] No Supabase projects found');
       return [];
     }
 
-    console.log('[Projects] Found Supabase projects:', data.length);
+    // console.log('[Projects] Found Supabase projects:', data.length);
     return (data as any[]).map(p => ({
       id: String(p.id),
       name: p.name ?? '',

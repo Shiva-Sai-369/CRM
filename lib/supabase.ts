@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createBrowserClient } from "@supabase/ssr";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -193,7 +193,7 @@ const mockSupabaseClient = {
 
 export const supabase = isPlaceholder 
   ? mockSupabaseClient 
-  : createClient<LooseDatabase, "public">(supabaseUrl, supabaseAnonKey);
+  : createBrowserClient<LooseDatabase, "public">(supabaseUrl, supabaseAnonKey);
 
 // Maintain compatibility for components/stores using the getter function
 export function getSupabaseClient() {

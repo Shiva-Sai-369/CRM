@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'User not found' }, { status: 404 });
   }
 
-  const currentRole = targetProfile.role as UserRole;
+  const currentRole = (targetProfile as any).role as UserRole;
 
   // If demoting a super_admin, check if they're the last one
   if (currentRole === 'super_admin' && newRole !== 'super_admin') {
@@ -74,8 +74,8 @@ export async function POST(request: NextRequest) {
   }
 
   // Update role
-  const { error: updateErr } = await admin
-    .from('profiles')
+  const { error: updateErr } = await (admin
+    .from('profiles') as any)
     .update({ role: newRole })
     .eq('id', targetUserId);
 

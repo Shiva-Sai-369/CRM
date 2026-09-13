@@ -19,7 +19,7 @@ export default function LoginPage() {
     }
     startTransition(async () => {
       
-      console.log('[login] Attempting sign in with password...');
+      // console.log('[login] Attempting sign in with password...');
       const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
       
       if (authError) {
@@ -28,7 +28,7 @@ export default function LoginPage() {
         return;
       }
 
-      console.log('[login] Sign in successful, fetching user profile...');
+      // console.log('[login] Sign in successful, fetching user profile...');
 
       // Get authenticated user
       const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -51,7 +51,7 @@ export default function LoginPage() {
         return;
       }
 
-      console.log('[login] Profile loaded, role:', profile.role);
+      // console.log('[login] Profile loaded, role:', profile.role);
 
       // Redirect based on role (same logic as callback route)
       if (profile.role === 'client') {
@@ -70,7 +70,7 @@ export default function LoginPage() {
 
         const projectId = (assignments as Array<{ project_id: number }> | null)?.[0]?.project_id;
         if (projectId) {
-          console.log('[login] Redirecting client to analytics:', projectId);
+          // console.log('[login] Redirecting client to analytics:', projectId);
           window.location.href = `/analytics/${projectId}`;
         } else {
           console.warn('[login] Client has no project assignments');
@@ -78,7 +78,7 @@ export default function LoginPage() {
         }
       } else {
         // super_admin or team_member -> /projects
-        console.log('[login] Redirecting', profile.role, 'to /projects');
+        // console.log('[login] Redirecting', profile.role, 'to /projects');
         window.location.href = '/projects';
       }
     });

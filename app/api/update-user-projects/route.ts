@@ -76,8 +76,8 @@ export async function POST(request: NextRequest) {
       project_id: projectId,
     }));
 
-    const { error: insertErr } = await admin
-      .from('project_assignments')
+    const { error: insertErr } = await (admin
+      .from('project_assignments') as any)
       .insert(rows);
 
     if (insertErr) {

@@ -35,8 +35,8 @@ export async function POST(request: NextRequest) {
   }
 
   // Update profile
-  const { error: updateErr } = await supabase
-    .from('profiles')
+  const { error: updateErr } = await (supabase
+    .from('profiles') as any)
     .update({ full_name: displayName })
     .eq('id', user.id);
 

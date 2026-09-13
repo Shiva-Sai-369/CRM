@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Update profile to is_active = false
-  const { error: updateErr } = await admin
+  const { error: updateErr } = await (admin as any)
     .from('profiles')
     .update({ is_active: false })
     .eq('id', targetUserId);

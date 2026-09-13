@@ -75,7 +75,6 @@ export async function POST(req: NextRequest) {
     const csvText = await response.text();
     
     console.log('[sync] CSV text length:', csvText.length);
-    console.log('[sync] First 200 chars:', csvText.substring(0, 200));
     
     // Parse CSV using Papa.parse (handles quoted fields with commas correctly)
     const parseResult = Papa.parse<SheetRow>(csvText, {
@@ -86,7 +85,6 @@ export async function POST(req: NextRequest) {
     const rows = parseResult.data;
     
     console.log('[sync] Parsed rows count:', rows.length);
-    console.log('[sync] First row sample:', rows[0]);
 
     if (rows.length === 0) {
       return NextResponse.json(
@@ -107,9 +105,9 @@ export async function POST(req: NextRequest) {
 
     if (existingSheet) {
       // Update existing sheet
-      sheetId = existingSheet.id;
-      await supabase
-        .from('google_sheets')
+      sheetId = (existingSheet as any).id;
+      const updateResult = await (supabase
+        .from('google_sheets') as any)
         .update({
           name: sheetName,
           updated_at: new Date().toISOString(),
@@ -118,8 +116,8 @@ export async function POST(req: NextRequest) {
     } else {
       // Create new google_sheets entry
       const now = new Date().toISOString();
-      const { data: newSheet, error: sheetError } = await supabase
-        .from('google_sheets')
+      const { data: newSheet, error: sheetError } = await (supabase
+        .from('google_sheets') as any)
         .insert({
           project_id: projectId,
           name: sheetName,
@@ -147,8 +145,8 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (!existingAssignment) {
-      const { error: assignError } = await supabase
-        .from('project_assignments')
+      const { error: assignError } = await (supabase
+        .from('project_assignments') as any)
         .insert({
           user_id: user.id,
           project_id: projectId,
@@ -164,18 +162,15 @@ export async function POST(req: NextRequest) {
     }
 
     // Get existing leads to avoid duplicates
-    const { data: existingLeads } = await supabase
-      .from('sheet_leads')
+    const { data: existingLeads } = await (supabase
+      .from('sheet_leads') as any)
       .select('email, phone')
       .eq('sheet_id', sheetId);
 
     console.log('[sync] Existing leads count:', existingLeads?.length || 0);
     
-    const existingEmails = new Set(existingLeads?.map(l => l.email?.toLowerCase()) || []);
-    const existingPhones = new Set(existingLeads?.map(l => l.phone) || []);
-    
-    console.log('[sync] Existing emails:', existingEmails.size);
-    console.log('[sync] Existing phones:', existingPhones.size);
+    const existingEmails = new Set((existingLeads as any)?.map((l: any) => l.email?.toLowerCase()) || []);
+    const existingPhones = new Set((existingLeads as any)?.map((l: any) => l.phone) || []);
 
     // Prepare leads for insertion
     const leadsToInsert: any[] = [];
@@ -212,7 +207,7 @@ export async function POST(req: NextRequest) {
             createdAt = row.created_time;
           }
           
-          console.log(`[sync] Row ${rowIndex} parsed via field_data:`, { name, email, phone, company });
+          // console.log(`[sync] Row ${rowIndex} parsed via field_data:`, { name, email, phone, company });
         } else {
           // Parsing failed, skip this row
           emptyRowCount++;
@@ -239,12 +234,12 @@ export async function POST(req: NextRequest) {
         status = (row.Status?.trim() || row.lead_status?.trim() || 'new').toLowerCase();
         createdAt = row.Timestamp || row.created_time || new Date().toISOString();
         
-        console.log(`[sync] Row ${rowIndex} parsed via flat columns:`, { name, email, phone, company });
+        // console.log(`[sync] Row ${rowIndex} parsed via flat columns:`, { name, email, phone, company });
       }
 
       // Skip completely empty rows
       if (!email && !phone && !name) {
-        console.log(`[sync] Row ${rowIndex} skipped: empty (mode: ${parseMode})`);
+        // console.log(`[sync] Row ${rowIndex} skipped: empty (mode: ${parseMode})`);
         emptyRowCount++;
         continue;
       }
@@ -252,23 +247,17 @@ export async function POST(req: NextRequest) {
       // Skip if duplicate
       if (email && existingEmails.has(email)) {
         duplicateCount++;
-        console.log(`[sync] Row ${rowIndex} skipped: duplicate email: ${email}`);
+        // console.log(`[sync] Row ${rowIndex} skipped: duplicate email: ${email}`);
         continue;
       }
       if (phone && existingPhones.has(phone)) {
         duplicateCount++;
-        console.log(`[sync] Row ${rowIndex} skipped: duplicate phone: ${phone}`);
+        // console.log(`[sync] Row ${rowIndex} skipped: duplicate phone: ${phone}`);
         continue;
       }
 
       // Log before insertion
-      console.log(`[sync] Row ${rowIndex} adding to insert queue (mode: ${parseMode}):`, {
-        name,
-        email,
-        phone,
-        company,
-        status,
-      });
+      // console.log(`[sync] Row ${rowIndex} adding to insert queue (mode: ${parseMode}):`, { name, email, phone, company, status });
 
       leadsToInsert.push({
         sheet_id: sheetId,
@@ -285,19 +274,15 @@ export async function POST(req: NextRequest) {
       });
     }
     
-    console.log('[sync] Leads to insert:', leadsToInsert.length);
-    console.log('[sync] Duplicates skipped:', duplicateCount);
-    console.log('[sync] Empty rows skipped:', emptyRowCount);
-    console.log('[sync] Sample lead to insert:', leadsToInsert[0]);
-
+    
     // Insert leads in batches of 100
     let insertedCount = 0;
     const batchSize = 100;
     
     for (let i = 0; i < leadsToInsert.length; i += batchSize) {
       const batch = leadsToInsert.slice(i, i + batchSize);
-      const { error: insertError } = await supabase
-        .from('sheet_leads')
+      const { error: insertError } = await (supabase
+        .from('sheet_leads') as any)
         .insert(batch);
 
       if (insertError) {
