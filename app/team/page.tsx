@@ -501,7 +501,7 @@ export default function TeamPage() {
                         <p className="text-sm font-medium text-white">{m.full_name ?? '—'}</p>
                         <p className="text-xs text-gray-400">{m.email}</p>
                         {!m.is_active && (
-                          <p className="text-xs text-red-400 mt-1 font-medium">Deactivated</p>
+                          <p className="text-xs text-red-400 mt-1 font-medium">Disabled</p>
                         )}
                       </div>
                     </div>
@@ -550,7 +550,7 @@ export default function TeamPage() {
                           disabled={deactivatingId === m.id}
                           className="text-xs px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 hover:text-red-300 rounded-lg transition-colors disabled:opacity-50"
                         >
-                          {deactivatingId === m.id ? 'Deactivating…' : 'Deactivate'}
+                          {deactivatingId === m.id ? 'Disabling…' : 'Disable'}
                         </button>
                       ) : (
                         <button
@@ -559,7 +559,7 @@ export default function TeamPage() {
                           disabled={reactivatingId === m.id}
                           className="text-xs px-3 py-1.5 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 text-green-400 hover:text-green-300 rounded-lg transition-colors disabled:opacity-50"
                         >
-                          {reactivatingId === m.id ? 'Reactivating…' : 'Reactivate'}
+                          {reactivatingId === m.id ? 'Enabling…' : 'Enable'}
                         </button>
                       )}
                     </div>

@@ -155,7 +155,7 @@ export default function Sidebar() {
   };
 
   const role = profile?.role ?? null;
-  const navigation = BASE_NAV.filter((item) => !role || item.roles.includes(role));
+  const navigation = BASE_NAV.filter((item) => (role ? item.roles.includes(role) : item.roles.includes('team_member')));
 
   return (
     <div className="flex flex-col w-64 bg-gray-900 border-r border-gray-800 text-white h-screen">

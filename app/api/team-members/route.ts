@@ -53,6 +53,7 @@ export async function GET(request: NextRequest) {
 
   const result: TeamMemberWithAssignments[] = typedMembers.map((m) => ({
     ...m,
+    is_active: m.is_active !== false,
     assignments: assignmentsByUser[m.id] ?? [],
   }));
 

@@ -262,7 +262,7 @@ export default function ProjectDetailPage() {
   const [sheets, setSheets] = useState<GoogleSheet[]>([]);
   const [supaLeads, setSupaLeads] = useState<SheetLead[]>([]);
   const [loadingProject, setLoadingProject] = useState(true);
-  const [loadingLeads, setLoadingLeads] = useState(false);
+  const [loadingLeads, setLoadingLeads] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>('sheets');
   const [syncingSheetId, setSyncingSheetId] = useState<number | null>(null);
   const [showAddSheet, setShowAddSheet] = useState(false);
@@ -289,25 +289,24 @@ export default function ProjectDetailPage() {
   useEffect(() => { refresh(); }, [refresh]);
 
   const fetchLeads = useCallback(async () => {
-    if (sheets.length === 0) { setSupaLeads([]); return; }
     setLoadingLeads(true);
+    if (sheets.length === 0) { setSupaLeads([]); setLoadingLeads(false); return; }
     const sheetIds = sheets.map(s => s.id);
     const { data } = await supabase.from('sheet_leads').select('*').in('sheet_id', sheetIds).order('created_at', { ascending: false });
     setSupaLeads((data ?? []) as SheetLead[]); setLoadingLeads(false);
   }, [sheets]);
 
-  useEffect(() => { if (activeTab === 'leads') fetchLeads(); }, [activeTab, fetchLeads]);
+  useEffect(() => { fetchLeads(); }, [fetchLeads]);
+
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
 
   useEffect(() => {
     const check = async () => {
       const { data: { user } } = await supabase.auth.getUser(); if (!user) return;
       const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single();
       const role = (profile as { role: UserRole } | null)?.role;
+      if (role) setUserRole(role);
       if (role === 'super_admin') { setCanInviteClient(true); return; }
-      if (role === 'team_member') {
-        const { data: asgn } = await supabase.from('project_assignments').select('id').eq('user_id', user.id).eq('project_id', projectId).maybeSingle();
-        setCanInviteClient(!!asgn);
-      }
     }; check();
   }, [projectId]);
 
@@ -327,7 +326,7 @@ export default function ProjectDetailPage() {
       const json = await res.json() as { error?: string; message?: string; insertedRows?: number };
       if (!res.ok) throw new Error(json.error ?? 'Sync failed');
       toast.success(json.message ?? 'Synced new leads');
-      refresh(); if (activeTab === 'leads') fetchLeads();
+      refresh(); fetchLeads();
     } catch (err) { toast.error(err instanceof Error ? err.message : 'Sync failed'); }
     finally { setSyncingSheetId(null); }
   };
@@ -377,7 +376,7 @@ export default function ProjectDetailPage() {
   const totalLeads = supaLeads.length;
   const TABS: { id: Tab; label: string }[] = [
     { id: 'sheets', label: `Sheets (${sheets.length})` },
-    { id: 'leads', label: `Leads (${totalLeads})` },
+    { id: 'leads', label: `Leads (${loadingLeads ? '…' : totalLeads})` },
     { id: 'settings', label: 'Settings' },
   ];
 
@@ -408,7 +407,7 @@ export default function ProjectDetailPage() {
             <span className="text-gray-300">&middot;</span>
             <div className="flex items-center gap-1.5 text-xs text-gray-500">
               <svg className="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-              <span><strong className="text-gray-700">{totalLeads > 0 ? totalLeads : '—'}</strong> leads</span>
+              <span><strong className="text-gray-700">{loadingLeads ? '…' : totalLeads}</strong> leads</span>
             </div>
             <span className="text-gray-300">&middot;</span>
             <span className="text-xs text-gray-400">Created {new Date(project.created_at ?? '').toLocaleDateString()}</span>
@@ -502,14 +501,16 @@ export default function ProjectDetailPage() {
                 </button>
               </div>
             </div>
-            <div className="bg-white rounded-xl border border-red-200 shadow-sm p-6">
-              <h2 className="text-sm font-semibold text-red-700 mb-1">Danger Zone</h2>
-              <p className="text-xs text-gray-500 mb-4">Deleting this project is a permanent action. You will be asked what happens to linked sheets and leads.</p>
-              <button id="btn-delete-project" onClick={() => setShowDeleteModal(true)} className="flex items-center gap-2 px-4 py-2.5 border border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400 text-sm font-medium rounded-xl transition-colors">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                Delete Project…
-              </button>
-            </div>
+            {userRole === 'super_admin' && (
+              <div className="bg-white rounded-xl border border-red-200 shadow-sm p-6">
+                <h2 className="text-sm font-semibold text-red-700 mb-1">Danger Zone</h2>
+                <p className="text-xs text-gray-500 mb-4">Deleting this project is a permanent action. You will be asked what happens to linked sheets and leads.</p>
+                <button id="btn-delete-project" onClick={() => setShowDeleteModal(true)} className="flex items-center gap-2 px-4 py-2.5 border border-red-300 text-red-600 hover:bg-red-50 hover:border-red-400 text-sm font-medium rounded-xl transition-colors">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                  Delete Project…
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

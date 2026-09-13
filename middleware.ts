@@ -28,6 +28,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  const startTotal = performance.now();
+
   // Build a response we can mutate cookies on
   let response = NextResponse.next({ request });
 
@@ -46,23 +48,28 @@ export async function middleware(request: NextRequest) {
   });
 
   // Refresh session if expired — important for SSR
+  const startAuth = performance.now();
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const endAuth = performance.now();
 
   // Not authenticated → /login
   if (!user) {
+    console.log(`[Middleware] [${pathname}] Auth check: ${(endAuth - startAuth).toFixed(2)}ms | Total: ${(performance.now() - startTotal).toFixed(2)}ms`);
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = '/login';
     return NextResponse.redirect(loginUrl);
   }
 
   // Fetch the user's profile to get their role
+  const startProfile = performance.now();
   const { data: profile } = await supabase
     .from('profiles')
     .select('role')
     .eq('id', user.id)
     .single();
+  const endProfile = performance.now();
 
   const role = (profile as { role?: string } | null)?.role ?? null;
 
@@ -71,21 +78,24 @@ export async function middleware(request: NextRequest) {
     // Clients may only visit /analytics/[projectId]
     if (!isAnalyticsRoute(pathname)) {
       // Find their assigned project and redirect there
+      const startAssign = performance.now();
       const { data: assignments } = await supabase
         .from('project_assignments')
         .select('project_id')
         .eq('user_id', user.id)
         .limit(1);
+      const endAssign = performance.now();
 
       const projectId = (assignments as Array<{ project_id: number }> | null)?.[0]?.project_id;
+      console.log(`[Middleware] [${pathname}] Auth: ${(endAuth - startAuth).toFixed(2)}ms | Profile: ${(endProfile - startProfile).toFixed(2)}ms | Assign: ${(endAssign - startAssign).toFixed(2)}ms | Total: ${(performance.now() - startTotal).toFixed(2)}ms`);
       if (projectId) {
         const analyticsUrl = request.nextUrl.clone();
         analyticsUrl.pathname = `/analytics/${projectId}`;
         return NextResponse.redirect(analyticsUrl);
       }
-      // No assignment — let them through (analytics page will handle empty state)
       return response;
     }
+    console.log(`[Middleware] [${pathname}] Auth: ${(endAuth - startAuth).toFixed(2)}ms | Profile: ${(endProfile - startProfile).toFixed(2)}ms | Total: ${(performance.now() - startTotal).toFixed(2)}ms`);
     return response;
   }
 
@@ -106,13 +116,16 @@ export async function middleware(request: NextRequest) {
     }
 
     // Check if they have any project assignments
+    const startAssign = performance.now();
     const { data: assignments } = await supabase
       .from('project_assignments')
       .select('project_id')
       .eq('user_id', user.id)
       .limit(1);
+    const endAssign = performance.now();
 
     const hasProjects = (assignments?.length ?? 0) > 0;
+    console.log(`[Middleware] [${pathname}] Auth: ${(endAuth - startAuth).toFixed(2)}ms | Profile: ${(endProfile - startProfile).toFixed(2)}ms | Assign: ${(endAssign - startAssign).toFixed(2)}ms | Total: ${(performance.now() - startTotal).toFixed(2)}ms`);
     if (!hasProjects && pathname !== '/no-projects') {
       const noProjectsUrl = request.nextUrl.clone();
       noProjectsUrl.pathname = '/no-projects';
@@ -129,6 +142,8 @@ export async function middleware(request: NextRequest) {
     homeUrl.pathname = '/projects';
     return NextResponse.redirect(homeUrl);
   }
+
+  console.log(`[Middleware] [${pathname}] Auth: ${(endAuth - startAuth).toFixed(2)}ms | Profile: ${(endProfile - startProfile).toFixed(2)}ms | Total: ${(performance.now() - startTotal).toFixed(2)}ms`);
 
   // Profile missing or unknown role — send to login
   if (!role) {

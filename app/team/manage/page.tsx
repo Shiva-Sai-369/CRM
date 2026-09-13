@@ -189,19 +189,19 @@ export default function ManageUsersPage() {
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Super Admins</p>
           <p className="text-2xl font-bold text-blue-400">
-            {users.filter(u => u.role === 'super_admin' && u.is_active).length}
+            {users.filter(u => u.role === 'super_admin' && u.is_active !== false).length}
           </p>
         </div>
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Team Members</p>
           <p className="text-2xl font-bold text-green-400">
-            {users.filter(u => u.role === 'team_member' && u.is_active).length}
+            {users.filter(u => u.role === 'team_member' && u.is_active !== false).length}
           </p>
         </div>
         <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
           <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Clients</p>
           <p className="text-2xl font-bold text-purple-400">
-            {users.filter(u => u.role === 'client' && u.is_active).length}
+            {users.filter(u => u.role === 'client' && u.is_active !== false).length}
           </p>
         </div>
       </div>
@@ -280,12 +280,13 @@ function UserRow({
 }) {
   const [showProjectModal, setShowProjectModal] = useState(false);
   const assignedProjectIds = user.assignments.map(a => a.project_id);
+  const isActive = user.is_active !== false;
 
   return (
     <>
       <tr
         className={`transition-colors ${
-          user.is_active ? 'hover:bg-gray-800/50' : 'bg-gray-900/50 opacity-60'
+          isActive ? 'hover:bg-gray-800/50' : 'bg-gray-900/50 opacity-60'
         }`}
       >
         {/* User info */}
@@ -293,7 +294,7 @@ function UserRow({
           <div className="flex items-center gap-3">
             <div
               className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                user.is_active
+                isActive
                   ? user.role === 'super_admin'
                     ? 'bg-blue-600/20 border border-blue-600/30'
                     : user.role === 'team_member'
@@ -304,7 +305,7 @@ function UserRow({
             >
               <span
                 className={`text-xs font-semibold ${
-                  user.is_active
+                  isActive
                     ? user.role === 'super_admin'
                       ? 'text-blue-400'
                       : user.role === 'team_member'
@@ -328,8 +329,8 @@ function UserRow({
                 )}
               </div>
               <p className="text-xs text-gray-400">{user.email}</p>
-              {!user.is_active && (
-                <p className="text-xs text-red-400 mt-1 font-medium">Deactivated</p>
+              {!isActive && (
+                <p className="text-xs text-red-400 mt-1 font-medium">Disabled</p>
               )}
             </div>
           </div>
@@ -351,15 +352,15 @@ function UserRow({
         {/* Status toggle */}
         <td className="px-6 py-4">
           <button
-            onClick={() => onStatusToggle(user.id, user.is_active)}
-            disabled={isCurrentUser && !user.is_active}
+            onClick={() => onStatusToggle(user.id, isActive)}
+            disabled={isCurrentUser && !isActive}
             className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              user.is_active
+              isActive
                 ? 'bg-green-500/10 text-green-400 hover:bg-green-500/20 border border-green-500/20'
                 : 'bg-gray-700/50 text-gray-400 hover:bg-gray-700 border border-gray-600'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
-            {user.is_active ? 'Active' : 'Inactive'}
+            {isActive ? 'Enabled' : 'Disabled'}
           </button>
         </td>
 

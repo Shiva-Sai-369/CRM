@@ -70,6 +70,23 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<DisplayProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchUserRole = async () => {
+      const supabase = getSupabaseClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+        if (profile) setUserRole(profile.role);
+      }
+    };
+    fetchUserRole();
+  }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -147,6 +164,8 @@ export default function ProjectsPage() {
     refresh();
   };
 
+  const isSuperAdmin = userRole === 'super_admin';
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-4xl mx-auto space-y-6">
@@ -160,18 +179,20 @@ export default function ProjectsPage() {
               Organize your sheet tabs by client or campaign
             </p>
           </div>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold
-              rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor"
-              viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round"
-                strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
-            </svg>
-            New Project
-          </button>
+          {isSuperAdmin && (
+            <button
+              onClick={() => setShowCreate(true)}
+              className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold
+                rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor"
+                viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round"
+                  strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+              </svg>
+              New Project
+            </button>
+          )}
         </div>
 
         {/* Loading state */}
@@ -201,13 +222,15 @@ export default function ProjectsPage() {
             <p className="text-sm text-gray-500 mb-4">
               Create a project to group your sheet tabs by client
             </p>
-            <button
-              onClick={() => setShowCreate(true)}
-              className="px-4 py-2 bg-blue-600 text-white text-sm
-                font-semibold rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Create Project
-            </button>
+            {isSuperAdmin && (
+              <button
+                onClick={() => setShowCreate(true)}
+                className="px-4 py-2 bg-blue-600 text-white text-sm
+                  font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Create Project
+              </button>
+            )}
           </div>
         )}
 
@@ -269,13 +292,15 @@ export default function ProjectsPage() {
                   >
                     Open
                   </button>
-                  <button
-                    onClick={e => handleDelete(project, e)}
-                    className="px-3 py-1.5 text-xs border border-red-200
-                      text-red-600 rounded-lg hover:bg-red-50 transition-colors"
-                  >
-                    Delete
-                  </button>
+                  {isSuperAdmin && (
+                    <button
+                      onClick={e => handleDelete(project, e)}
+                      className="px-3 py-1.5 text-xs border border-red-200
+                        text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                    >
+                      Delete
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

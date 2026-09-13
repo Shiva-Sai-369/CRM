@@ -52,6 +52,7 @@ export async function GET(request: NextRequest) {
 
   const result: UserWithAssignments[] = typedUsers.map((u) => ({
     ...u,
+    is_active: u.is_active !== false,
     assignments: assignmentsByUser[u.id] ?? [],
   }));
 
