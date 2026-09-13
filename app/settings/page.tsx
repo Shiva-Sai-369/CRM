@@ -439,6 +439,10 @@ export default function SettingsPage() {
         url: selectedTabForProject.url,
       });
       
+      const tabId = selectedTabForProject.id;
+      const tabUrl = selectedTabForProject.url;
+      const tabName = selectedTabForProject.name;
+      
       if (result) {
         toast.success(`Sheet linked to project`);
       } else {
@@ -452,6 +456,39 @@ export default function SettingsPage() {
       setNewProjectName('');
       setNewProjectDescription('');
       setCreatingNewProject(false);
+      
+      // Auto-sync after linking if it's a valid Supabase project
+      if (result && projectId && !String(projectId).startsWith('-') && !isNaN(Number(projectId)) && Number(projectId) > 0) {
+        setSyncingTabId(tabId);
+        try {
+          const res = await fetch('/api/sync-sheet-to-supabase', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sheetUrl: tabUrl,
+              projectId: Number(projectId),
+              sheetName: tabName,
+            }),
+          });
+          
+          const data = await res.json() as { 
+            error?: string; 
+            message?: string;
+            insertedRows?: number;
+            skippedRows?: number;
+          };
+          
+          if (!res.ok) {
+            throw new Error(data.error ?? 'Sync failed');
+          }
+          
+          toast.success(data.message || `Synced ${data.insertedRows || 0} leads`);
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : 'Sync failed');
+        } finally {
+          setSyncingTabId(null);
+        }
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to link sheet');
     } finally {
