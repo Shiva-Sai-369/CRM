@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { supabase } from '@/lib/supabase';
 import type { TeamMemberWithAssignments } from '@/types/rbac';
 
 interface Project {
@@ -317,11 +318,6 @@ export default function TeamPage() {
       // Fallback: load projects from Supabase directly if no dedicated endpoint
       if (!projectsRes.ok) {
         // We'll load projects via the supabase client on the client side
-        const { createBrowserClient } = await import('@supabase/ssr');
-        const supabase = createBrowserClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        );
         const { data } = await supabase.from('projects').select('id, name').order('name');
         setProjects((data ?? []) as Project[]);
       } else {
@@ -339,11 +335,6 @@ export default function TeamPage() {
   useEffect(() => {
     const loadProjects = async () => {
       try {
-        const { createBrowserClient } = await import('@supabase/ssr');
-        const supabase = createBrowserClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        );
         const { data } = await supabase.from('projects').select('id, name').order('name');
         setProjects((data ?? []) as Project[]);
       } catch {

@@ -1,10 +1,7 @@
 'use client';
 
-import { useState, useTransition, useMemo } from 'react';
-import { createBrowserClient } from '@supabase/ssr';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+import { useState, useTransition } from 'react';
+import { supabase } from '@/lib/supabase';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -12,12 +9,6 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
-
-  // Create a single Supabase client instance using useMemo
-  const supabase = useMemo(
-    () => createBrowserClient(supabaseUrl, supabaseAnonKey),
-    []
-  );
 
   const handlePassword = () => {
     setError(null);

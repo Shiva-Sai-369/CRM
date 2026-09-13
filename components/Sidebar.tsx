@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { createBrowserClient } from '@supabase/ssr';
+import { supabase } from '@/lib/supabase';
 import { useTaskStore } from '@/store/taskStore';
 import {
   formatTaskReminderSummary,
@@ -74,13 +74,6 @@ const ROLE_LABELS: Record<string, string> = {
   client: 'Client',
 };
 
-function getSupabaseBrowser() {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-}
-
 export default function Sidebar() {
   const pathname = usePathname();
   const tasks = useTaskStore((state) => state.tasks);
@@ -91,7 +84,6 @@ export default function Sidebar() {
   // Load profile from Supabase
   useEffect(() => {
     const load = async () => {
-      const supabase = getSupabaseBrowser();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       const { data } = await supabase
@@ -158,7 +150,6 @@ export default function Sidebar() {
   }, []);
 
   const handleSignOut = async () => {
-    const supabase = getSupabaseBrowser();
     await supabase.auth.signOut();
     window.location.href = '/login';
   };

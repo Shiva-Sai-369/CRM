@@ -11,7 +11,7 @@ import AddLeadModal from "@/components/AddLeadModal";
 import type { Lead } from "@/lib/parseLeads";
 import { useProjectStore } from "@/store/projectStore";
 import type { GoogleSheet, SheetLead } from "@/types/supabase";
-import { getSupabaseClient } from "@/lib/supabase";
+import { supabase } from "@/lib/supabase";
 
 function toUiLead(lead: SheetLead, sheet: GoogleSheet | undefined): Lead {
   const createdAt = lead.created_at ? new Date(lead.created_at) : null;
@@ -124,7 +124,6 @@ function EnquiriesContent() {
   useEffect(() => {
     if (selectedProjectId === null) return;
 
-    const supabase = getSupabaseClient();
     const channel = supabase
       .channel("sheet_leads_changes")
       .on(
@@ -171,6 +170,12 @@ function EnquiriesContent() {
   }, [selectedProjectId, selectedSheetId, sheets, addLead, updateLead, deleteLead]);
 
   const leads = useMemo(() => {
+    // Defensive check: ensure supabaseLeads is an array
+    if (!Array.isArray(supabaseLeads)) {
+      console.error("❌ supabaseLeads is not an array! Value:", supabaseLeads);
+      return [];
+    }
+    
     return supabaseLeads
       .filter((lead) => {
         // If not All Projects scope, filter out leads not belonging to the current project's sheets

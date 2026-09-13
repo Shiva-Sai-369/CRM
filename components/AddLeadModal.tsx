@@ -4,7 +4,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import toast from "react-hot-toast";
 import { X, Loader2, AlertCircle } from "lucide-react";
 import { useProjectStore } from "@/store/projectStore";
-import { createBrowserClient } from '@supabase/ssr';
+import { supabase } from '@/lib/supabase';
 
 interface AddLeadModalProps {
   isOpen: boolean;
@@ -75,11 +75,6 @@ export default function AddLeadModal({
     setIsSubmitting(true);
 
     try {
-      const supabase = createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      );
-
       // Get or create a default sheet for this project
       let sheetId: number;
       

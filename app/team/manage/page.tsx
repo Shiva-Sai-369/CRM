@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
-import { createBrowserClient } from '@supabase/ssr';
+import { supabase } from '@/lib/supabase';
 import type { UserRole } from '@/types/rbac';
 
 interface Project {
@@ -37,10 +37,6 @@ export default function ManageUsersPage() {
   useEffect(() => {
     const checkAccess = async () => {
       try {
-        const supabase = createBrowserClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        );
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
           router.push('/login');
@@ -82,10 +78,6 @@ export default function ManageUsersPage() {
 
       // Load projects from Supabase if API doesn't exist
       if (!projectsRes.ok) {
-        const supabase = createBrowserClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        );
         const { data } = await supabase.from('projects').select('id, name').order('name');
         setProjects((data ?? []) as Project[]);
       } else {
@@ -103,10 +95,6 @@ export default function ManageUsersPage() {
   useEffect(() => {
     const loadProjects = async () => {
       try {
-        const supabase = createBrowserClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL!,
-          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        );
         const { data } = await supabase.from('projects').select('id, name').order('name');
         setProjects((data ?? []) as Project[]);
       } catch {

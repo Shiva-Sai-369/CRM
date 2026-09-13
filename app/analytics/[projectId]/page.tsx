@@ -2,15 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import { createBrowserClient } from '@supabase/ssr';
+import { supabase } from '@/lib/supabase';
 import type { AnalyticsData } from '@/types/rbac';
-
-function getSupabaseBrowser() {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-}
 
 // ── Inline bar chart (no recharts dependency needed) ────────────────────────
 
@@ -118,8 +111,6 @@ export default function ClientAnalyticsPage() {
       setLoading(true);
       setError(null);
       try {
-        const supabase = getSupabaseBrowser();
-
         // Call the client-only analytics RPC
         const { data, error: rpcError } = await supabase.rpc('get_project_analytics', {
           p_project_id: projectId,
@@ -144,7 +135,6 @@ export default function ClientAnalyticsPage() {
   }, [projectId]);
 
   const handleSignOut = async () => {
-    const supabase = getSupabaseBrowser();
     await supabase.auth.signOut();
     window.location.href = '/login';
   };

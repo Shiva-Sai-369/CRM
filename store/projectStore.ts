@@ -1,18 +1,9 @@
 import { create } from "zustand";
-import { createBrowserClient } from '@supabase/ssr';
+import { supabase } from '@/lib/supabase';
 import type { GoogleSheet, Project, SheetLead, LeadNote } from "@/types/supabase";
 import { getProjects as getLocalProjects } from '@/lib/projectStorage';
 
-// Create a function to get the SSR browser client
-function getSupabaseClient() {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-}
-
 async function fetchNotesForLeads(
-  supabase: ReturnType<typeof getSupabaseClient>,
   leadIds: number[]
 ): Promise<Record<number, LeadNote[]>> {
   if (leadIds.length === 0) return {};
@@ -108,8 +99,6 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   fetchProjects: async () => {
     set({ loading: true, error: null });
     try {
-      const supabase = getSupabaseClient();
-      
       // Get current user and their role
       const { data: { user } } = await supabase.auth.getUser();
       
@@ -206,7 +195,6 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   createProject: async (name, description) => {
     set({ loading: true, error: null });
     try {
-      const supabase = getSupabaseClient();
       const payload: Pick<Project, "name" | "description"> = {
         name,
         description: description?.trim() ? description.trim() : null,
@@ -239,7 +227,6 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   fetchSheetsForProject: async (projectId) => {
     set({ loading: true, error: null });
     try {
-      const supabase = getSupabaseClient();
       let query = supabase.from("google_sheets").select("*");
       if (projectId !== "all") {
         query = query.eq("project_id", projectId);
@@ -259,7 +246,6 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   fetchLeadsForProject: async (projectId) => {
     set({ loading: true, error: null });
     try {
-      const supabase = getSupabaseClient();
       let query = supabase.from("google_sheets").select("id");
       if (projectId !== "all") {
         query = query.eq("project_id", projectId);
@@ -288,7 +274,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
 
       const sheetLeads = (leads ?? []) as SheetLead[];
       const leadIds = sheetLeads.map((l) => l.id);
-      const notesMap = await fetchNotesForLeads(supabase, leadIds);
+      const notesMap = await fetchNotesForLeads(leadIds);
 
       set((state) => ({
         leads: sheetLeads,
@@ -306,7 +292,6 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   fetchLeadsForSheet: async (sheetId) => {
     set({ loading: true, error: null });
     try {
-      const supabase = getSupabaseClient();
       const { data, error } = await supabase
         .from("sheet_leads")
         .select("*")
@@ -319,7 +304,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
 
       const sheetLeads = (data ?? []) as SheetLead[];
       const leadIds = sheetLeads.map((l) => l.id);
-      const notesMap = await fetchNotesForLeads(supabase, leadIds);
+      const notesMap = await fetchNotesForLeads(leadIds);
 
       set((state) => ({
         leads: sheetLeads,
@@ -337,7 +322,6 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   updateLeadStatus: async (leadId, status) => {
     set({ error: null });
     try {
-      const supabase = getSupabaseClient();
       const { data, error } = await supabase
         .from("sheet_leads")
         .update({ status })
@@ -351,7 +335,9 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
 
       const updated = data as SheetLead;
       set((state) => ({
-        leads: state.leads.map((lead) => (lead.id === leadId ? updated : lead)),
+        leads: Array.isArray(state.leads) 
+          ? state.leads.map((lead) => (lead.id === leadId ? updated : lead))
+          : [],
       }));
     } catch (err) {
       set({ error: getErrorMessage(err) });
@@ -361,7 +347,6 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   updateLeadNotes: async (leadId, notes) => {
     set({ error: null });
     try {
-      const supabase = getSupabaseClient();
       const { data, error } = await supabase
         .from("sheet_leads")
         .update({ notes })
@@ -375,7 +360,9 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
 
       const updated = data as SheetLead;
       set((state) => ({
-        leads: state.leads.map((lead) => (lead.id === leadId ? updated : lead)),
+        leads: Array.isArray(state.leads) 
+          ? state.leads.map((lead) => (lead.id === leadId ? updated : lead))
+          : [],
       }));
     } catch (err) {
       set({ error: getErrorMessage(err) });
@@ -385,8 +372,6 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   updateLeadDetails: async (leadId, details) => {
     set({ error: null });
     try {
-      const supabase = getSupabaseClient();
-      
       const currentLead = get().leads.find((l) => l.id === leadId);
       const currentRawData = (currentLead?.raw_data && typeof currentLead.raw_data === 'object' && !Array.isArray(currentLead.raw_data))
         ? (currentLead.raw_data as Record<string, any>)
@@ -416,7 +401,9 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
 
       const updated = data as SheetLead;
       set((state) => ({
-        leads: state.leads.map((lead) => (lead.id === leadId ? updated : lead)),
+        leads: Array.isArray(state.leads) 
+          ? state.leads.map((lead) => (lead.id === leadId ? updated : lead))
+          : [],
       }));
     } catch (err) {
       set({ error: getErrorMessage(err) });
@@ -427,8 +414,6 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   createLeadManually: async (leadData) => {
     set({ loading: true, error: null });
     try {
-      const supabase = getSupabaseClient();
-
       let nextRowNumber = 1;
       const { data: maxRowData, error: maxRowError } = await supabase
         .from("sheet_leads")
@@ -507,7 +492,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
           newLeadNotes[createdLead.id] = [insertedNote, ...(newLeadNotes[createdLead.id] || [])];
         }
         return {
-          leads: [createdLead, ...state.leads],
+          leads: [createdLead, ...(Array.isArray(state.leads) ? state.leads : [])],
           leadNotes: newLeadNotes,
           loading: false,
         };
@@ -522,7 +507,6 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
 
   fetchNotesForLead: async (leadId) => {
     try {
-      const supabase = getSupabaseClient();
       const { data, error } = await supabase
         .from("lead_notes")
         .select("*")
@@ -547,7 +531,6 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
 
   addNoteForLead: async (leadId, content) => {
     try {
-      const supabase = getSupabaseClient();
       const { data, error } = await supabase
         .from("lead_notes")
         .insert({ lead_id: leadId, content })
@@ -577,7 +560,7 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
         return state;
       }
       return {
-        leads: [lead, ...state.leads],
+        leads: [lead, ...(Array.isArray(state.leads) ? state.leads : [])],
       };
     });
   },
@@ -590,7 +573,9 @@ export const useProjectStore = create<ProjectStoreState>((set, get) => ({
 
   deleteLead: (leadId) => {
     set((state) => ({
-      leads: state.leads.filter((l) => l.id !== leadId),
+      leads: Array.isArray(state.leads) 
+        ? state.leads.filter((l) => l.id !== leadId)
+        : [],
     }));
   },
 }));

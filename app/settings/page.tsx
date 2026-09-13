@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { createBrowserClient } from '@supabase/ssr';
+import { supabase } from '@/lib/supabase';
 import {
   getSheetTabs,
   saveSheetTab,
@@ -86,11 +86,6 @@ export default function SettingsPage() {
   useEffect(() => {
     const fetchData = async () => {
       // Fetch Supabase projects
-      const supabase = createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      );
-      
       const { data: supabaseProjects } = await supabase
         .from('projects')
         .select('*')
@@ -118,10 +113,6 @@ export default function SettingsPage() {
     
     // Get current user email and profile for password change and display name
     const fetchUser = async () => {
-      const supabase = createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      );
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setCurrentUserEmail(user.email || null);
@@ -147,11 +138,6 @@ export default function SettingsPage() {
     setTabs(getSheetTabs());
     
     // Also refresh projects from Supabase
-    const supabase = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
-    
     const { data: supabaseProjects } = await supabase
       .from('projects')
       .select('*')
@@ -265,11 +251,6 @@ export default function SettingsPage() {
     setChangingPassword(true);
 
     try {
-      const supabase = createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      );
-
       // Step 1: Re-authenticate with current password
       const { error: authError } = await supabase.auth.signInWithPassword({
         email: currentUserEmail,
