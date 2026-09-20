@@ -8,9 +8,10 @@ import FilterBar from "@/components/FilterBar";
 import StatsStrip from "@/components/StatsStrip";
 import LeadsTable from "@/components/LeadsTable";
 import AddLeadModal from "@/components/AddLeadModal";
+import CustomStatusManager from "@/components/CustomStatusManager";
 import type { Lead } from "@/lib/parseLeads";
 import { useProjectStore } from "@/store/projectStore";
-import type { GoogleSheet, SheetLead } from "@/types/supabase";
+import type { GoogleSheet, SheetLead, CustomStatus } from "@/types/supabase";
 import { supabase } from "@/lib/supabase";
 
 function toUiLead(lead: SheetLead, sheet: GoogleSheet | undefined): Lead {
@@ -57,12 +58,37 @@ function EnquiriesContent() {
   const [isLive, setIsLive] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [customStatuses, setCustomStatuses] = useState<CustomStatus[]>([]);
+  const [isCustomStatusManagerOpen, setIsCustomStatusManagerOpen] = useState(false);
 
   const filterState = useFilterStore();
 
   const updateLastUpdatedTime = () => {
     const now = new Date();
     setLastUpdated(now.toLocaleTimeString());
+  };
+
+  // Fetch custom statuses
+  const fetchCustomStatuses = async () => {
+    if (selectedProjectId === null || selectedProjectId === "all") {
+      setCustomStatuses([]);
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/custom-statuses?project_id=${selectedProjectId}`);
+      const result = await response.json();
+
+      if (response.ok) {
+        setCustomStatuses(result.statuses || []);
+      } else {
+        console.error('Failed to fetch custom statuses:', result.error);
+        setCustomStatuses([]);
+      }
+    } catch (error) {
+      console.error('Error fetching custom statuses:', error);
+      setCustomStatuses([]);
+    }
   };
 
   // Fetch projects on mount
@@ -95,6 +121,7 @@ function EnquiriesContent() {
   useEffect(() => {
     if (selectedProjectId === null) return;
     void fetchSheetsForProject(selectedProjectId);
+    void fetchCustomStatuses();
   }, [fetchSheetsForProject, selectedProjectId]);
 
   // Fetch leads when project or sheet changes
@@ -279,7 +306,21 @@ function EnquiriesContent() {
             </div>
           </div>
 
-          <button
+          <div className="flex gap-2">
+            <button
+              onClick={() => setIsCustomStatusManagerOpen(true)}
+              disabled={selectedProjectId === null || selectedProjectId === "all"}
+              className="px-3 py-2 bg-purple-600 text-white text-sm font-semibold rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              title={selectedProjectId === null || selectedProjectId === "all" ? "Select a specific project to manage custom statuses" : "Manage custom statuses"}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              Custom Status
+            </button>
+
+            <button
             onClick={() => {
               if (selectedProjectId === null) {
                 toast.error("Select a project first");
@@ -314,6 +355,7 @@ function EnquiriesContent() {
               </>
             )}
           </button>
+          </div>
         </div>
       </div>
 
@@ -433,7 +475,9 @@ function EnquiriesContent() {
           <LeadsTable
             leads={filteredLeads}
             loading={loading}
+            customStatuses={customStatuses}
             onAddLeadClick={() => setIsAddModalOpen(true)}
+            onManageCustomStatuses={() => setIsCustomStatusManagerOpen(true)}
           />
         )}
       </div>
@@ -443,6 +487,16 @@ function EnquiriesContent() {
         onClose={() => setIsAddModalOpen(false)}
         selectedProjectId={selectedProjectId}
       />
+
+      {isCustomStatusManagerOpen && (
+        <CustomStatusManager
+          selectedProjectId={selectedProjectId}
+          onStatusCreated={() => {
+            void fetchCustomStatuses();
+          }}
+          onClose={() => setIsCustomStatusManagerOpen(false)}
+        />
+      )}
     </div>
   );
 }

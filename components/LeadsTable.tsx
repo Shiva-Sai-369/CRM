@@ -10,14 +10,23 @@ import { useProjectStore } from "@/store/projectStore";
 import type { Lead } from "@/lib/parseLeads";
 import LeadRow from "./LeadRow";
 import { Plus, Download, Trash2 } from "lucide-react";
+import type { CustomStatus } from "@/types/supabase";
 
 interface LeadsTableProps {
   leads: Lead[];
   loading: boolean;
+  customStatuses?: CustomStatus[];
   onAddLeadClick: () => void;
+  onManageCustomStatuses?: () => void;
 }
 
-export default function LeadsTable({ leads, loading, onAddLeadClick }: LeadsTableProps) {
+export default function LeadsTable({ 
+  leads, 
+  loading, 
+  customStatuses = [], 
+  onAddLeadClick, 
+  onManageCustomStatuses 
+}: LeadsTableProps) {
   const updateLeadStatus = useProjectStore((state) => state.updateLeadStatus);
   const updateLeadNotes = useProjectStore((state) => state.updateLeadNotes);
   const leadNotes = useProjectStore((state) => state.leadNotes);
@@ -400,7 +409,9 @@ export default function LeadsTable({ leads, loading, onAddLeadClick }: LeadsTabl
                 }
                 onSelect={(checked) => handleSelectLead(lead.uniqueKey, checked)}
                 availableStatuses={availableStatuses}
+                customStatuses={customStatuses}
                 onStatusChange={handleStatusChange}
+                onManageCustomStatuses={onManageCustomStatuses}
               />
             ))}
           </tbody>

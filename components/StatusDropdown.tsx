@@ -2,17 +2,22 @@
 
 import { useState, useRef, useEffect } from "react";
 import { STATUS_COLORS } from "@/lib/constants";
+import type { CustomStatus } from "@/types/supabase";
 
 interface StatusDropdownProps {
   currentStatus: string;
   availableStatuses: string[];
+  customStatuses?: CustomStatus[];
   onStatusChange: (newStatus: string) => void;
+  onManageCustomStatuses?: () => void;
 }
 
 export default function StatusDropdown({
   currentStatus,
   availableStatuses,
+  customStatuses = [],
   onStatusChange,
+  onManageCustomStatuses,
 }: StatusDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -39,7 +44,16 @@ export default function StatusDropdown({
     setIsOpen(false);
   };
 
-  const getStatusStyle = (status: string) => {
+  const getStatusStyle = (status: string, customStatus?: CustomStatus) => {
+    // If it's a custom status, use its colors
+    if (customStatus) {
+      return { 
+        backgroundColor: customStatus.background_color, 
+        color: customStatus.color, 
+        fontWeight: 'bold' 
+      };
+    }
+
     const normalizedStatus = status.toLowerCase();
     
     // Blue
@@ -75,7 +89,20 @@ export default function StatusDropdown({
     return { backgroundColor: '#F3F4F6', color: '#374151', fontWeight: 'bold' };
   };
 
-  const currentStyle = getStatusStyle(currentStatus);
+  // Check if current status is a custom status
+  const currentCustomStatus = customStatuses.find(cs => cs.name === currentStatus);
+  const currentStyle = getStatusStyle(currentStatus, currentCustomStatus);
+
+  // Combine available statuses with custom statuses
+  const allStatuses = [...availableStatuses];
+  const customStatusNames = customStatuses.map(cs => cs.name);
+  
+  // Add custom statuses that aren't already in availableStatuses
+  customStatusNames.forEach(name => {
+    if (!allStatuses.includes(name)) {
+      allStatuses.push(name);
+    }
+  });
 
   return (
     <div ref={dropdownRef} className="relative">
@@ -106,6 +133,8 @@ export default function StatusDropdown({
           <div className="px-3 py-2 border-b border-gray-200 bg-gray-50">
             <p className="text-xs font-bold text-gray-700 uppercase">Change Status</p>
           </div>
+          
+          {/* Standard Statuses */}
           {availableStatuses.map((status) => {
             const statusStyle = getStatusStyle(status);
             const isSelected = status === currentStatus;
@@ -136,6 +165,65 @@ export default function StatusDropdown({
               </button>
             );
           })}
+
+          {/* Custom Statuses */}
+          {customStatuses.length > 0 && (
+            <>
+              <div className="px-3 py-2 border-b border-gray-200 bg-gray-50 border-t">
+                <p className="text-xs font-bold text-gray-700 uppercase">Custom Statuses</p>
+              </div>
+              {customStatuses.map((customStatus) => {
+                const statusStyle = getStatusStyle(customStatus.name, customStatus);
+                const isSelected = customStatus.name === currentStatus;
+
+                return (
+                  <button
+                    key={customStatus.id}
+                    onClick={(e) => handleStatusClick(e, customStatus.name)}
+                    className={`w-full text-left px-3 py-2 hover:bg-gray-100 transition-colors flex items-center justify-between ${
+                      isSelected ? "bg-blue-50" : ""
+                    }`}
+                  >
+                    <span 
+                      style={statusStyle}
+                      className="inline-block px-4 py-2 rounded text-sm font-bold"
+                    >
+                      {customStatus.name}
+                    </span>
+                    {isSelected && (
+                      <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path
+                          fillRule="evenodd"
+                          d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    )}
+                  </button>
+                );
+              })}
+            </>
+          )}
+
+          {/* Add Custom Status Button */}
+          {onManageCustomStatuses && (
+            <>
+              <div className="border-t border-gray-200 my-2"></div>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsOpen(false);
+                  onManageCustomStatuses();
+                }}
+                className="w-full text-left px-3 py-2 hover:bg-gray-100 transition-colors text-sm text-blue-600 font-medium flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Add Custom Status
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>

@@ -98,6 +98,18 @@ export interface ProjectAssignment {
   created_at: string;
 }
 
+export interface CustomStatus {
+  id: number;
+  name: string;
+  color: string;
+  background_color: string;
+  project_id: number | null;
+  created_by: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 
 export type Database = {
   public: {
@@ -203,6 +215,29 @@ export type Database = {
         Insert: Omit<ProjectAssignment, 'id' | 'created_at'> & { id?: number; created_at?: string };
         Update: Partial<ProjectAssignment>;
         Relationships: [];
+      };
+      custom_statuses: {
+        Row: CustomStatus;
+        Insert: Omit<CustomStatus, 'id' | 'created_at' | 'updated_at'> & { 
+          id?: number; 
+          created_at?: string; 
+          updated_at?: string; 
+        };
+        Update: Partial<CustomStatus> & { id?: number };
+        Relationships: [
+          {
+            foreignKeyName: "custom_statuses_project_id_fkey";
+            columns: ["project_id"];
+            referencedRelation: "projects";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "custom_statuses_created_by_fkey";
+            columns: ["created_by"];
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          }
+        ];
       };
     };
     Views: { [_ in never]: never };

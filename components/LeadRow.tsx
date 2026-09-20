@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import toast from "react-hot-toast";
 import { format, isToday } from "date-fns";
 import type { Lead } from "@/lib/parseLeads";
+import type { CustomStatus } from "@/types/supabase";
 import StatusDropdown from "./StatusDropdown";
 import TagPill from "./TagPill";
 import { useProjectStore } from "@/store/projectStore";
@@ -31,7 +32,9 @@ interface LeadRowProps {
   onToggleExpand: () => void;
   onSelect: (checked: boolean) => void;
   availableStatuses: string[];
+  customStatuses?: CustomStatus[];
   onStatusChange: (leadId: string, newStatus: string) => void;
+  onManageCustomStatuses?: () => void;
 }
 
 export default function LeadRow({
@@ -41,7 +44,9 @@ export default function LeadRow({
   onToggleExpand,
   onSelect,
   availableStatuses,
+  customStatuses = [],
   onStatusChange,
+  onManageCustomStatuses,
 }: LeadRowProps) {
   // Details Edit States
   const [isEditingDetails, setIsEditingDetails] = useState(false);
@@ -303,7 +308,9 @@ export default function LeadRow({
             <StatusDropdown
               currentStatus={lead.leadStatus}
               availableStatuses={availableStatuses}
+              customStatuses={customStatuses}
               onStatusChange={handleStatusChange}
+              onManageCustomStatuses={onManageCustomStatuses}
             />
           </div>
         </td>
