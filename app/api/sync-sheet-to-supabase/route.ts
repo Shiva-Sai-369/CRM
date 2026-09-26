@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase-server';
 import Papa from 'papaparse';
+import { fetchPublishedSheetCsv, SheetFetchError } from '@/lib/googleSheets';
+import { getMissingColumnsMessage, mapSheetColumns, readLeadFields } from '@/lib/sheetColumns';
 
 /**
  * API Route: POST /api/sync-sheet-to-supabase
@@ -13,23 +15,6 @@ import Papa from 'papaparse';
  * 2. Create/update google_sheets entry
  * 3. Insert leads into sheet_leads table
  */
-
-interface SheetRow {
-  Name?: string;
-  Email?: string;
-  Phone?: string;
-  Company?: string;
-  Status?: string;
-  Timestamp?: string;
-  Platform?: string;
-  // Facebook Lead Ads format
-  created_time?: string;
-  id?: string;
-  ad_id?: string;
-  form_id?: string;
-  field_data?: string; // JSON string containing actual lead data
-  [key: string]: any;
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -55,29 +40,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Validate CSV URL
-    if (!sheetUrl.includes('output=csv') && !sheetUrl.includes('/pub')) {
-      return NextResponse.json(
-        { error: 'Invalid Google Sheets CSV URL' },
-        { status: 400 }
-      );
+    // Fetch data from Google Sheets. Only published-CSV links on docs.google.com are allowed
+    // (this is a server-side fetch of a caller-supplied URL); see lib/googleSheets.ts.
+    let csvText: string;
+    try {
+      csvText = await fetchPublishedSheetCsv(sheetUrl);
+    } catch (fetchError) {
+      if (fetchError instanceof SheetFetchError) {
+        return NextResponse.json({ error: fetchError.message }, { status: 400 });
+      }
+      throw fetchError;
     }
 
-    // Fetch data from Google Sheets
-    const response = await fetch(sheetUrl);
-    if (!response.ok) {
-      return NextResponse.json(
-        { error: `Failed to fetch sheet data: ${response.statusText}` },
-        { status: 400 }
-      );
-    }
-
-    const csvText = await response.text();
-    
     console.log('[sync] CSV text length:', csvText.length);
     
     // Parse CSV using Papa.parse (handles quoted fields with commas correctly)
-    const parseResult = Papa.parse<SheetRow>(csvText, {
+    const parseResult = Papa.parse<Record<string, string>>(csvText, {
       header: true,
       skipEmptyLines: true,
     });
@@ -91,6 +69,14 @@ export async function POST(req: NextRequest) {
         { error: 'No data found in sheet' },
         { status: 400 }
       );
+    }
+
+    // Map the header row once; every row is then read through the same mapping.
+    const headers = parseResult.meta.fields ?? [];
+    const mapping = mapSheetColumns(headers);
+    const missingColumnsMessage = getMissingColumnsMessage(mapping, headers);
+    if (missingColumnsMessage) {
+      return NextResponse.json({ error: missingColumnsMessage }, { status: 400 });
     }
 
     // Check if google_sheets entry already exists
@@ -181,65 +167,16 @@ export async function POST(req: NextRequest) {
     for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
       const row = rows[rowIndex];
       
-      // Parse lead data - support both standard format and Facebook Lead Ads format
-      let email: string | null = null;
-      let phone: string | null = null;
-      let name: string | null = null;
-      let company: string | null = null;
-      let status: string = 'new';
-      let createdAt: string = new Date().toISOString();
-      let parseMode: string = 'unknown';
-
-      // Check if this is Facebook Lead Ads format (has field_data column)
-      if (row.field_data) {
-        parseMode = 'field_data';
-        const flatData = parseFacebookFieldData(row.field_data, rowIndex);
-        
-        if (flatData) {
-          // Extract fields using same alternative names as lib/parseLeads.ts
-          email = flatData.email || null;
-          phone = flatData.phone_number || null;
-          name = flatData.full_name || null;
-          company = flatData.company || null;
-          
-          // Use created_time from row if available
-          if (row.created_time) {
-            createdAt = row.created_time;
-          }
-          
-          // console.log(`[sync] Row ${rowIndex} parsed via field_data:`, { name, email, phone, company });
-        } else {
-          // Parsing failed, skip this row
-          emptyRowCount++;
-          continue;
-        }
-      } else {
-        // Standard format - direct columns
-        // Support both capital case (Name, Email, Phone) and Facebook format (full_name, email, phone_number)
-        parseMode = 'flat';
-        
-        // Try standard column names first, then Facebook alternative names
-        name = row.Name?.trim() || row.full_name?.trim() || null;
-        email = (row.Email?.trim() || row.email?.trim())?.toLowerCase() || null;
-        
-        // Phone might have Facebook prefix like "p:+918367630604" - strip it
-        let rawPhone = row.Phone?.trim() || row.phone_number?.trim() || null;
-        if (rawPhone && rawPhone.startsWith('p:')) {
-          phone = rawPhone.substring(2);
-        } else {
-          phone = rawPhone;
-        }
-        
-        company = row.Company?.trim() || row.company?.trim() || null;
-        status = (row.Status?.trim() || row.lead_status?.trim() || 'new').toLowerCase();
-        createdAt = row.Timestamp || row.created_time || new Date().toISOString();
-        
-        // console.log(`[sync] Row ${rowIndex} parsed via flat columns:`, { name, email, phone, company });
-      }
+      const fields = readLeadFields(row, mapping);
+      const name = fields.name || null;
+      const email = fields.email.toLowerCase() || null;
+      const phone = fields.phone || null;
+      const company = fields.company || null;
+      const status = (fields.status || 'new').toLowerCase();
+      const createdAt = fields.date || new Date().toISOString();
 
       // Skip completely empty rows
       if (!email && !phone && !name) {
-        // console.log(`[sync] Row ${rowIndex} skipped: empty (mode: ${parseMode})`);
         emptyRowCount++;
         continue;
       }
@@ -255,9 +192,6 @@ export async function POST(req: NextRequest) {
         // console.log(`[sync] Row ${rowIndex} skipped: duplicate phone: ${phone}`);
         continue;
       }
-
-      // Log before insertion
-      // console.log(`[sync] Row ${rowIndex} adding to insert queue (mode: ${parseMode}):`, { name, email, phone, company, status });
 
       leadsToInsert.push({
         sheet_id: sheetId,
@@ -316,58 +250,5 @@ export async function POST(req: NextRequest) {
       { error: error instanceof Error ? error.message : 'Internal server error' },
       { status: 500 }
     );
-  }
-}
-
-/**
- * Parse Facebook Lead Ads field_data JSON format
- * 
- * Format: [{"name":"full_name","values":["John Doe"]},{"name":"email","values":["x@y.com"]}]
- * 
- * @param fieldDataStr - JSON string or already-parsed object
- * @param rowIndex - Row index for error logging
- * @returns Flat object with field names as keys, or null if parsing fails
- */
-function parseFacebookFieldData(fieldDataStr: any, rowIndex: number): Record<string, string> | null {
-  try {
-    let fieldData;
-    
-    // field_data might already be parsed as an object by Papa.parse
-    if (typeof fieldDataStr === 'string') {
-      fieldData = JSON.parse(fieldDataStr);
-    } else if (typeof fieldDataStr === 'object') {
-      fieldData = fieldDataStr;
-    } else {
-      console.error(`[sync] Row ${rowIndex}: field_data has unexpected type:`, typeof fieldDataStr);
-      return null;
-    }
-    
-    // Convert array format to flat lookup object
-    if (!Array.isArray(fieldData)) {
-      console.error(`[sync] Row ${rowIndex}: field_data is not an array after parsing`);
-      return null;
-    }
-    
-    const flatData: Record<string, string> = {};
-    
-    for (const field of fieldData) {
-      if (!field.name) continue;
-      
-      const fieldName = field.name;
-      const fieldValue = Array.isArray(field.values) ? field.values[0] : field.values || '';
-      
-      flatData[fieldName] = String(fieldValue).trim();
-    }
-    
-    return flatData;
-    
-  } catch (error) {
-    const truncated = String(fieldDataStr).substring(0, 200);
-    console.error(
-      `[sync] Row ${rowIndex}: Failed to parse field_data:`,
-      error instanceof Error ? error.message : error,
-      '\nRaw field_data (truncated):', truncated
-    );
-    return null;
   }
 }

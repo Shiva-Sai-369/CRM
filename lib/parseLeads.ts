@@ -1,5 +1,6 @@
 import Papa from "papaparse";
 import { parse as parseDate, isValid } from "date-fns";
+import { mapSheetColumns, readLeadFields, type SheetColumnMapping } from "@/lib/sheetColumns";
 
 /**
  * Lead data structure with all fields strictly typed
@@ -31,31 +32,22 @@ export interface Lead {
 }
 
 /**
- * Raw CSV row structure before parsing
- * Supports multiple column name formats
+ * Raw CSV row structure before parsing. Name, email, phone, status, date and company are read through
+ * the shared header mapping in lib/sheetColumns.ts; the columns below are the ones parseRow reads directly.
  */
 interface RawCsvRow {
-  // Standard column names
-  Name?: string;
-  Email?: string;
-  Phone?: string;
+  [header: string]: string | undefined;
   "Lead Source"?: string;
-  "Lead Status"?: string;
   Tags?: string;
   "Last Message"?: string;
   "Last Message Date"?: string;
   Notes?: string;
   Platform?: string;
-  
-  // Alternative column names (from Facebook/Instagram forms)
-  full_name?: string;
-  phone_number?: string;
-  email?: string;
-  lead_status?: string;
+
+  // Facebook/Instagram form columns
   campaign_name?: string;
   platform?: string;
   form_name?: string;
-  created_time?: string;
   ad_name?: string;
   education_level?: string;
   adset_name?: string;
@@ -159,18 +151,17 @@ function generateUniqueKey(email: string, name: string, phone: string): string {
  * @param row - Raw CSV row data
  * @returns Parsed Lead object
  */
-function parseRow(row: RawCsvRow): Lead {
-  // Support both standard and alternative column names
-  const name = (row.Name || row.full_name || "Unknown").trim();
-  const email = (row.Email || row.email || "").trim();
-  const phone = (row.Phone || row.phone_number || "").trim();
+function parseRow(row: RawCsvRow, mapping: SheetColumnMapping): Lead {
+  const fields = readLeadFields(row, mapping);
+  const name = fields.name || "Unknown";
+  const email = fields.email;
+  const phone = fields.phone;
   const leadSource = (row["Lead Source"] || row.form_name || row.campaign_name || "Direct").trim();
-  const leadStatus = toTitleCase((row["Lead Status"] || row.lead_status || "New Lead").trim());
+  const leadStatus = toTitleCase(fields.status || "New Lead");
   const tags = parseTags(row.Tags || "");
   const lastMessage = (row["Last Message"] || "").trim();
   
-  // Use created_time as the primary date field
-  const lastMessageDate = parseDateString(row.created_time || row["Last Message Date"] || "");
+  const lastMessageDate = parseDateString(fields.date || row["Last Message Date"] || "");
   
   const notes = (row.Notes || "").trim();
   const platform = (row.Platform || row.platform || "Facebook").trim();
@@ -200,6 +191,7 @@ function parseRow(row: RawCsvRow): Lead {
     notes,
     platform,
     uniqueKey,
+    company: fields.company || undefined,
     adName,
     campaignName,
     formName,
@@ -242,20 +234,38 @@ function deduplicateLeads(leads: Lead[]): Lead[] {
   return Array.from(leadMap.values());
 }
 
+export interface ParsedLeadsCsv {
+  leads: Lead[];
+  /** The sheet's header row, as written. */
+  headers: string[];
+  mapping: SheetColumnMapping;
+}
+
 /**
- * Parse CSV data into an array of Lead objects
+ * Parse CSV data into Lead objects, also returning how the header row was understood
+ * (used by Settings → Test Connection).
  * @param csvData - Raw CSV string data
- * @returns Array of parsed and deduplicated Lead objects
  */
-export function parseLeadsFromCsv(csvData: string): Lead[] {
+export function parseLeadsCsvWithColumns(csvData: string): ParsedLeadsCsv {
   const parseResult = Papa.parse<RawCsvRow>(csvData, {
     header: true,
     skipEmptyLines: true,
     dynamicTyping: false,
   });
 
-  const leads = parseResult.data.map(parseRow);
-  return deduplicateLeads(leads);
+  const headers = parseResult.meta.fields ?? [];
+  const mapping = mapSheetColumns(headers);
+  const leads = parseResult.data.map((row) => parseRow(row, mapping));
+  return { leads: deduplicateLeads(leads), headers, mapping };
+}
+
+/**
+ * Parse CSV data into an array of Lead objects
+ * @param csvData - Raw CSV string data
+ * @returns Array of parsed and deduplicated Lead objects
+ */
+export function parseLeadsFromCsv(csvData: string): Lead[] {
+  return parseLeadsCsvWithColumns(csvData).leads;
 }
 
 /**

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { supabase } from '@/lib/supabase';
+import { getConnectionTestSummary } from '@/lib/sheetColumns';
 import {
   getSheetTabs,
   saveSheetTab,
@@ -369,9 +370,9 @@ export default function SettingsPage() {
     setTesting(false);
 
     setTestResult(
-      result.error
-        ? { success: false, message: result.error }
-        : { success: true, message: `Connected — ${result.total} leads found` }
+      result.error || !result.columns
+        ? { success: false, message: result.error ?? 'Could not read the sheet' }
+        : getConnectionTestSummary(result.columns.mapping, result.columns.headers, result.total)
     );
   };
 
@@ -980,7 +981,7 @@ export default function SettingsPage() {
 
             {testResult && (
               <div
-                className={`p-3 rounded-lg border text-sm font-medium ${
+                className={`p-3 rounded-lg border text-sm font-medium whitespace-pre-line ${
                   testResult.success
                     ? 'bg-green-50 border-green-200 text-green-800'
                     : 'bg-red-50 border-red-200 text-red-800'

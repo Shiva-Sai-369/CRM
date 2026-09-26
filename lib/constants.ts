@@ -77,3 +77,83 @@ export const PLATFORM_LABELS: Record<string, string> = {
 };
 
 export const ROWS_PER_PAGE = 25;
+
+/** Lead fields a sheet column can map to. */
+export const SHEET_FIELDS = ["name", "email", "phone", "status", "date", "company"] as const;
+export type SheetField = (typeof SHEET_FIELDS)[number];
+
+export const SHEET_FIELD_LABELS: Record<SheetField, string> = {
+  name: "Name",
+  email: "Email",
+  phone: "Phone",
+  status: "Status",
+  date: "Date",
+  company: "Company",
+};
+
+/**
+ * Header names accepted for each field, written the natural way. Matching ignores case, surrounding
+ * whitespace and punctuation ("E-mail", "e_mail" and " EMAIL " are the same header).
+ */
+export const SHEET_FIELD_ALIASES: Record<SheetField, readonly string[]> = {
+  name: ["name", "full_name", "full name", "contact name"],
+  email: ["email", "e-mail", "email address"],
+  phone: [
+    "phone",
+    "phone_number",
+    "phone number",
+    "phone no",
+    "mobile",
+    "mobile number",
+    "contact number",
+    "whatsapp",
+  ],
+  status: ["status", "lead_status", "lead status"],
+  date: ["timestamp", "created_time", "date", "submitted", "created at", "submitted at"],
+  company: ["company", "company name", "organization", "organisation"],
+};
+
+/** A sheet needs at least one of these (or a Facebook field_data column) to produce any lead. */
+export const SHEET_IDENTITY_FIELDS: readonly SheetField[] = ["name", "email", "phone"];
+
+/**
+ * Headers lib/parseLeads.ts reads directly rather than through SHEET_FIELD_ALIASES. They are valid
+ * columns, so the column mapper doesn't report them as "not recognised". Matching is as for aliases.
+ */
+export const SHEET_KNOWN_EXTRA_HEADERS: readonly string[] = [
+  "Lead Source",
+  "Tags",
+  "Last Message",
+  "Last Message Date",
+  "Notes",
+  "Platform",
+  "campaign_name",
+  "form_name",
+  "ad_name",
+  "education_level",
+  "adset_name",
+  "campaign_id",
+  "adset_id",
+  "ad_id",
+  "form_id",
+  "is_organic",
+];
+
+/** Facebook Lead Ads exports keep the answers as JSON in this column. */
+export const SHEET_FIELD_DATA_HEADER = "field_data";
+
+/** How many column names to list in a user-facing message before saying "and N more". */
+export const SHEET_MESSAGE_MAX_COLUMNS = 8;
+
+/**
+ * Google Sheets ingestion. The server only fetches published-CSV links on this host; Google answers
+ * those with a redirect to a googleusercontent.com host, which is the only other host we follow.
+ */
+export const GOOGLE_SHEETS = {
+  HOST: "docs.google.com",
+  REDIRECT_HOST_SUFFIX: ".googleusercontent.com",
+  /** /spreadsheets/d/<id>/pub or /spreadsheets/d/e/<published-id>/pub */
+  PUBLISHED_PATH: /^\/spreadsheets\/d\/(?:e\/)?[\w-]+\/pub$/,
+  MAX_REDIRECTS: 3,
+  FETCH_TIMEOUT_MS: 15_000,
+} as const;

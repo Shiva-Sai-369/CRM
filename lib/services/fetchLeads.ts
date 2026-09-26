@@ -1,4 +1,4 @@
-import { parseLeadsFromCsv, type Lead } from '@/lib/parseLeads';
+import { parseLeadsFromCsv, parseLeadsCsvWithColumns, type Lead, type ParsedLeadsCsv } from '@/lib/parseLeads';
 import { detectUrlType } from '@/lib/config';
 
 interface ScriptResponse {
@@ -14,6 +14,8 @@ interface FetchResult {
   total: number;
   fetchedAt: string;
   error: string | null;
+  /** How the sheet's header row was understood; only set by fetchLeadsFromCsv. */
+  columns?: Pick<ParsedLeadsCsv, 'headers' | 'mapping'>;
 }
 
 /**
@@ -125,13 +127,14 @@ export async function fetchLeadsFromCsv(csvUrl: string): Promise<FetchResult> {
       throw new Error('Sheet returned empty data. Make sure it is published as CSV.');
     }
 
-    const leads = parseLeadsFromCsv(csvText);
+    const { leads, headers, mapping } = parseLeadsCsvWithColumns(csvText);
 
     return {
       leads,
       total: leads.length,
       fetchedAt: new Date().toISOString(),
       error: null,
+      columns: { headers, mapping },
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
