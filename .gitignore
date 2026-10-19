@@ -31,3 +31,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+# Local DB dumps — never commit
+sql/current_live_schema.sql
+sql/dump_live_schema.sql

@@ -1,338 +1,170 @@
-# CRM — Lead Management & Project Tracking System
+# CRM — Lead Management & Project Tracking
 
-A comprehensive CRM system for digital marketing agencies with full role-based access control, team collaboration, and project management capabilities.
+A CRM for digital marketing agencies. Leads are pulled from Google Sheets into Supabase, grouped by project, and shown to each user according to their role.
 
-Built with Next.js 14, TypeScript, Tailwind CSS, Supabase, and Zustand.
+Built with Next.js 14 (App Router), TypeScript, Tailwind CSS, Supabase (Postgres, Auth, Row Level Security) and Zustand.
 
-## 🚀 Features
+## How it works
 
-### ✅ Role-Based Access Control (RBAC)
-- **Super Admin**: Full system access, user management, project assignment
-- **Team Members**: Access to assigned projects only, lead management, task tracking
-- **Clients**: Read-only analytics access for their projects
-
-### ✅ User Management
-- Invite team members and clients via email
-- Automatic account creation on first login
-- User activation/deactivation
-- Project assignment management
-- Password change functionality
-
-### ✅ Lead Management
-- Real-time Google Sheets integration
-- **Auto-assign project access on sync** (new!)
-- Advanced filtering (status, tags, date ranges, search)
-- Lead statistics dashboard
-- CSV export
-- Status tracking and updates
-- **Clear auth and access warnings** (new!)
-- **Visual diagnostic tool** (new!)
-
-### ✅ Project Management
-- Multi-project support
-- Project-based lead organization
-- Team member assignment to projects
-- **Automatic assignment on sheet sync** (new!)
-- Project analytics dashboard
-
-### ✅ Task Management
-- Create and assign tasks
-- Task status tracking
-- Due date management
-- Task notifications
-
-### ✅ Session Management (New!)
-- Session expiry warnings
-- Automatic logout on session expiry
-- Clean state management
-- Auth status monitoring
-
-## 🛠 Tech Stack
-
-- **Frontend**: Next.js 14 (App Router), TypeScript, Tailwind CSS
-- **Backend**: Supabase (PostgreSQL, Authentication, Row Level Security)
-- **State Management**: Zustand
-- **Data Integration**: Google Sheets via Apps Script
-- **Utilities**: papaparse, date-fns, react-hot-toast
-
-## 📁 Project Structure
+### Lead data flow
 
 ```
-/app
-  /api              — API routes (user management, invites, project assignment)
-  /analytics        — Project analytics pages
-  /login            — Authentication
-  /projects         — Project management
-  /team             — Team management & user administration
-  /settings         — User settings & configuration
-  /enquiries        — Lead management
-  /tasks            — Task tracking
-
-/components         — Reusable UI components
-/lib                — Business logic, utilities, auth
-/store              — Zustand state management
-/types              — TypeScript type definitions
-/docs               — Setup guides & documentation
+Google Sheet tab ──(File → Share → Publish to web → CSV)──► published CSV URL
+        │
+        ▼
+Settings page / project page ──► POST /api/sync-sheet-to-supabase
+        │                              • fetches the CSV server-side, parses it with papaparse
+        │                              • creates or updates the google_sheets row for (project, URL)
+        │                              • adds the caller to project_assignments if not already assigned
+        │                              • skips empty rows and duplicates (same email or phone in that sheet)
+        │                              • inserts new rows into sheet_leads
+        ▼
+Enquiries / project pages read sheet_leads through Supabase, filtered by RLS
 ```
 
-## 🚦 Getting Started
+Syncing only inserts new leads. Existing rows are not updated from the sheet.
+
+> **Note:** Publishing a tab to the web makes it readable by anyone who has the URL.
+
+### Roles
+
+Access is enforced in two places. `middleware.ts` handles page routing, and Supabase RLS policies handle data access.
+
+| Role | Lands on | Can use |
+|---|---|---|
+| `super_admin` | `/projects` | Everything except `/analytics/*`, including `/team` and `/team/manage` |
+| `team_member` | `/projects`, or `/no-projects` if they have no assignments | Projects they are assigned to. They are redirected away from `/team` and `/analytics/*`. |
+| `client` | `/analytics/<their first assigned project>` | Only `/analytics/[projectId]`, backed by the `get_project_analytics` RPC |
+
+New accounts get their `profiles` row from the `handle_new_user` trigger, which copies `user_metadata.role`. In the last documented schema, the trigger defaults to `client`.
+
+### Database tables used by the app
+
+| Table | Purpose |
+|---|---|
+| `profiles` | One row per auth user: `role`, `is_active`, display name |
+| `projects` | Client projects |
+| `project_assignments` | Which users can see which projects |
+| `google_sheets` | Sheet tabs linked to a project (`spreadsheet_id` holds the CSV URL) |
+| `sheet_leads` | Leads imported from sheets |
+| `lead_notes` | Notes on a lead |
+| `tasks` | Tasks, optionally linked to leads |
+| `custom_statuses` | Per-project lead statuses (`sql/create_custom_statuses_table.sql`) |
+
+### Leftovers from the pre-Supabase version
+
+Some code from the original browser-only CSV version is still wired in. `lib/projectStorage.ts` keeps projects in `localStorage`, and `lib/services/fetchLeads.ts` fetches and parses CSV in the browser. The Settings page and project store still merge these `localStorage` projects in, where they show up with negative IDs. **They can't be synced.** Create the project on the Projects page first.
+
+## Getting started
 
 ### Prerequisites
 - Node.js 18+
-- Supabase account
-- Google Sheets with lead data (optional)
+- A Supabase project
 
-### 1. Installation
+### 1. Install
 
 ```bash
 npm install
 ```
 
-### 2. Environment Configuration
+### 2. Environment
 
-Create a `.env.local` file:
+Create `.env.local`:
 
 ```env
-# Supabase
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-
-# App URL (for invites)
-NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_SUPABASE_URL=https://<project>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
+# Server-only. Needed for creating, deactivating, and reactivating users.
+SUPABASE_SERVICE_ROLE_KEY=<service_role key>
 ```
 
-### 3. Database Setup
+### 3. Database
 
-Follow the complete setup guide in `RBAC_SETUP.md` for:
-- Database schema creation
-- Row Level Security (RLS) policies
-- Initial super admin setup
+> ⚠️ **The core schema is not checked into this repo yet.** `sql/` only contains `create_custom_statuses_table.sql`.
 
-### 4. Google Sheets Integration (Optional)
-
-If using Google Sheets for lead data:
-1. Deploy the Apps Script from `/docs/google-apps-script.js`
-2. Add the Web App URL in Settings page
-
-### 5. Run Development Server
+Until the schema is restored as migrations, the last documented versions are in git history:
 
 ```bash
-npm run dev
+git show '459913c^:RBAC_SETUP.md'                 # tables, handle_new_user trigger, RLS, get_project_analytics RPC
+git show 'f3de60a^:docs/DEACTIVATION_SQL.md'      # is_active column + updated get_my_role()/has_project_access() and policies
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
+Later commits (for example `a9f7acb`) changed RLS policies, so compare these against the live Supabase project before relying on them. After the core schema, run `sql/create_custom_statuses_table.sql`.
 
-## 📚 Documentation
+### 4. Create the first super admin
 
-- **[RBAC_SETUP.md](./RBAC_SETUP.md)** - Complete database setup and RBAC configuration
-- **[RBAC_CURRENT_STATUS.md](./RBAC_CURRENT_STATUS.md)** - Current implementation status and features
-- **[docs/SETUP_GUIDE.md](./docs/SETUP_GUIDE.md)** - Detailed setup instructions
-- **[docs/INVITE_FLOW.md](./docs/INVITE_FLOW.md)** - User invite system documentation
-- **[docs/DEACTIVATION_IMPLEMENTATION.md](./docs/DEACTIVATION_IMPLEMENTATION.md)** - User deactivation feature docs
-
-## 🔐 Security
-
-- Row Level Security (RLS) enforced at database level
-- JWT-based authentication via Supabase
-- Route protection via Next.js middleware
-- Role-based API endpoint protection
-- Secure password reset flow
-
-## 🚀 Deployment
-
-### Render / Vercel / Netlify
-
-1. Push to your Git repository
-2. Connect repository to hosting platform
-3. Add environment variables
-4. Deploy
-
-**Important**: Ensure your Supabase project is configured for production and update `NEXT_PUBLIC_APP_URL` to your production domain.
-
-## 📝 Current Status
-
-✅ **Complete and Production-Ready:**
-- RBAC system with 3 role tiers
-- User invite and onboarding flow
-- User activation/deactivation
-- Project-based access control
-- Lead management system
-- Task tracking
-- Project analytics
-- Password management
-- Team administration UI
-
-## 🤝 Contributing
-
-This is a private project. For access or questions, contact the repository owner.
-
-## 📄 License
-
-Proprietary - All rights reserved
-
-
-## 🔧 Troubleshooting
-
-### Can't See Leads After Syncing?
-
-**New Feature**: The system now includes comprehensive diagnostics and automatic fixes!
-
-1. **Check Authentication**: Look for red "Authentication Required" banner on Enquiries page
-   - **Solution**: Click "Go to Login" button or visit `/login`
-
-2. **Check Project Access**: Look for yellow "No Projects Accessible" banner
-   - **Solution**: Projects are now auto-assigned when you sync sheets
-   - If still having issues, ask admin to assign you to the project
-
-3. **Use Debug Tool** (Development Mode):
-   - Click the 🔍 red button on Enquiries page
-   - Run diagnostics to see exactly what's wrong
-   - Follow the recommendations provided
-
-4. **Quick Fix**:
-   ```javascript
-   // Clear everything and re-login (paste in browser console)
-   localStorage.clear();
-   sessionStorage.clear();
-   window.location.href = '/login';
+The login page has no sign-up.
+1. In Supabase, go to **Authentication → Users → Add user**. Enter an email and password and tick auto-confirm.
+2. In the SQL editor, run:
+   ```sql
+   update public.profiles set role = 'super_admin' where email = 'you@example.com';
    ```
+3. Sign in at `/login`.
 
-### Session Expired?
+Create all other accounts from inside the app. See [docs/USER_MANAGEMENT.md](./docs/USER_MANAGEMENT.md).
 
-**New Feature**: Session monitoring with warnings!
+### 5. Run
 
-- You'll get a warning toast 5 minutes before your session expires
-- When session expires, you'll be auto-redirected to login
-- All storage is automatically cleared for a clean state
+```bash
+npm run dev      # http://localhost:3000
+npm run build
+npm run lint
+npm test         # Vitest is configured; no test files are checked in yet
+```
 
-### Need More Help?
+## Connecting a Google Sheet
 
-See our comprehensive documentation:
-- **Quick fixes**: `QUICK_REFERENCE.md`
-- **Detailed troubleshooting**: `HOW_TO_FIX_LEADS_ISSUE.md`
-- **Auth issues**: `AUTH_SESSION_FIX.md`
-- **Technical deep-dive**: `LEADS_SYNC_DIAGNOSIS.md`
-- **Complete summary**: `FINAL_SUMMARY.md`
+1. In the sheet, go to **File → Share → Publish to web**, pick the tab, and choose **Comma-separated values (.csv)**. Then publish.
+2. In **Settings**, add the tab:
+   - **Public Sheet**: paste the sheet URL or ID and the tabs are discovered automatically.
+   - **Private Sheet**: paste each tab's published CSV URL (`…/pub?output=csv`) one at a time.
+3. Link the tab to a Supabase project. Linking triggers the first sync.
+4. To pull in new rows later, use **Sync** on the project page.
 
-## 🆕 Recent Improvements (v1.0.0)
+### Column mapping
 
-### Authentication & Access Control Enhancements
+The sync route reads these columns. Header names are matched exactly.
 
-#### Auto-Assignment on Sync
-- Users are automatically assigned to projects when they sync Google Sheets
-- No more manual project assignment needed
-- Immediate access to synced leads
+| Lead field | Columns read |
+|---|---|
+| Name | `Name`, `full_name` |
+| Email | `Email`, `email` (lower-cased) |
+| Phone | `Phone`, `phone_number` (a leading `p:` is stripped) |
+| Company | `Company`, `company` |
+| Status | `Status`, `lead_status` (default `new`, lower-cased) |
+| Created at | `Timestamp`, `created_time` |
 
-#### Clear Error Messages
-- Red banner when not authenticated
-- Yellow banner when no projects accessible
-- Explanations of what went wrong and how to fix it
+Facebook Lead Ads exports that have a `field_data` JSON column are also supported. In that case `full_name`, `email`, `phone_number` and `company` are read from the JSON.
 
-#### Session Monitoring
-- Toast warnings 5 minutes before session expiry
-- Automatic redirect to login when session expires
-- Clean storage clearing on logout
+## Project structure
 
-#### Debug Tool (Development Mode)
-- Visual diagnostic interface
-- Shows auth status, role, project assignments
-- Identifies exact issues and provides recommendations
-- One-click diagnostics
+```
+app/
+  api/            Route handlers: user management, project assignment, sheet sync, custom statuses
+  analytics/      Client analytics view (/analytics/[projectId])
+  enquiries/      Lead table (`/` redirects here)
+  projects/       Project list and project detail (sheets, sync, client accounts)
+  tasks/          Task tracking
+  team/           Team page and /team/manage (super_admin only)
+  settings/       Profile, password, Google Sheet connections
+  login/, no-projects/
+components/       UI components
+lib/              Supabase clients (supabase.ts, supabase-server.ts), auth helpers, lead parsing/filtering/export
+store/            Zustand stores (projects, filters, tasks)
+types/            Supabase and domain types
+sql/              SQL migrations
+docs/             Feature documentation
+middleware.ts     Session refresh and role-based routing
+```
 
-#### Better User Experience
-- No more "43 leads found but 0 displayed" confusion
-- Clear feedback at every step
-- Self-service troubleshooting
-- Proactive session management
+## Documentation
 
-### Files Added
-- `components/LeadsDebugger.tsx` - Visual diagnostic tool
-- `components/SessionMonitor.tsx` - Session management
-- `components/AuthGate.tsx` - Auth wrapper (optional)
-- Comprehensive documentation suite (7 new docs)
+- [docs/USER_MANAGEMENT.md](./docs/USER_MANAGEMENT.md): account creation, project assignment, roles, deactivation
 
-### Files Modified
-- `app/api/sync-sheet-to-supabase/route.ts` - Auto-assignment logic
-- `app/enquiries/page.tsx` - Auth checks and warning banners
-- `app/layout.tsx` - SessionMonitor integration
+## Deployment
 
-## 📖 Documentation
+Any Next.js host works, including Vercel and Render. Set the three environment variables above. `SUPABASE_SERVICE_ROLE_KEY` must stay server-side and must never get a `NEXT_PUBLIC_` prefix.
 
-| Document | Purpose |
-|----------|---------|
-| `README.md` | This file - project overview |
-| `QUICK_REFERENCE.md` | Quick lookup for common issues |
-| `FINAL_SUMMARY.md` | Complete summary of recent improvements |
-| `HOW_TO_FIX_LEADS_ISSUE.md` | Step-by-step troubleshooting |
-| `AUTH_SESSION_FIX.md` | Authentication issue guide |
-| `LEADS_SYNC_DIAGNOSIS.md` | Technical analysis of RBAC |
-| `TESTING_GUIDE.md` | Testing scenarios and checklist |
-| `IMPLEMENTATION_PLAN.md` | Code changes and implementation |
-| `RBAC_CURRENT_STATUS.md` | RBAC system documentation |
-| `RBAC_SETUP.md` | RBAC setup instructions |
-| `docs/SETUP_GUIDE.md` | Initial setup guide |
-| `docs/INVITE_FLOW.md` | Invitation system docs |
+## License
 
-## 🎯 Best Practices
-
-### For Super Admins
-1. Assign team members to projects using the Team Management page
-2. Monitor user roles and access levels
-3. Use "All Projects" view to see system-wide data
-
-### For Team Members
-1. You'll automatically get access to projects you create or sync
-2. Check the project dropdown to switch between assigned projects
-3. Contact admin if you need access to additional projects
-
-### For Clients
-1. You have read-only access to your project's analytics
-2. Contact your project manager for changes or questions
-
-### Session Management
-1. Save your work regularly
-2. Watch for session expiry warnings (⏰ toast)
-3. You'll be auto-redirected to login if session expires
-
-## 🐛 Known Issues & Limitations
-
-1. **SessionMonitor in Mock Mode**: May not work correctly with placeholder Supabase credentials
-2. **Debug Tool Only in Development**: Disabled in production builds for security
-3. **Session Timeout**: Default 1 hour - configure in Supabase Auth settings
-
-## 🚀 Future Enhancements
-
-- [ ] Admin panel for user and project management
-- [ ] Sync history tracking
-- [ ] Advanced analytics dashboard
-- [ ] Mobile app support
-- [ ] Webhook integrations
-- [ ] Custom notification channels
-- [ ] Bulk operations (bulk assign, bulk status update)
-- [ ] Export/import project configurations
-
-## 📝 Changelog
-
-### Version 1.0.0 (Current)
-- ✅ Auto-assignment on sheet sync
-- ✅ Auth status warnings and banners
-- ✅ Session monitoring with expiry warnings
-- ✅ Debug tool for diagnostics
-- ✅ Comprehensive documentation
-- ✅ Improved error messages
-- ✅ Better UX for auth issues
-
-### Version 0.9.0 (Previous)
-- RBAC system implementation
-- User invitation flow
-- Project assignments
-- Team management
-- Multi-project support
-
----
-
-**Need Help?** Start with `QUICK_REFERENCE.md` for common issues, or see the full documentation index above.
-
-**Found a Bug?** Check existing documentation first, then open an issue with debug tool output.
-
-**Contributing?** See `IMPLEMENTATION_PLAN.md` for code structure and conventions.
+Proprietary. All rights reserved.
