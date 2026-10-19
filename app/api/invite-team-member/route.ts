@@ -9,6 +9,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient, createServerClient } from '@/lib/supabase-server';
 import { getUserProfile } from '@/lib/auth';
+import type { UserRole } from '@/types/rbac';
+
+// The generated Database type resolves profiles.update() to `never` (same reason sibling routes cast),
+// so describe just the call we make instead of falling back to `any`.
+interface ProfileRoleUpdater {
+  update(values: { role: UserRole }): {
+    eq(column: 'id', value: string): PromiseLike<{ error: { message: string } | null }>;
+  };
+}
 
 export async function POST(request: NextRequest) {
   // Authenticate caller
@@ -59,7 +68,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ 
+  // The handle_new_user trigger always creates profiles as 'client' (sql/001) and ignores
+  // user_metadata.role, so promote here with the service-role client. Fail closed: if the promotion
+  // fails, remove the account rather than leave a client the admin believes is a team member.
+  const { error: roleError } = await (admin.from('profiles') as unknown as ProfileRoleUpdater)
+    .update({ role: 'team_member' })
+    .eq('id', data.user.id);
+
+  if (roleError) {
+    await admin.auth.admin.deleteUser(data.user.id);
+    return NextResponse.json(
+      { error: `Could not assign the team_member role: ${roleError.message}` },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json({
     success: true, 
     userId: data.user.id,
     email,
