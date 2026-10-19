@@ -188,11 +188,13 @@ export type Database = {
           notes: string | null;
           created_at: string;
           completed_at: string | null;
+          created_by: string | null;
         };
-        Insert: Omit<Database["public"]["Tables"]["tasks"]["Row"], "id" | "created_at" | "completed_at"> & {
+        Insert: Omit<Database["public"]["Tables"]["tasks"]["Row"], "id" | "created_at" | "completed_at" | "created_by"> & {
           id?: number;
           created_at?: string;
           completed_at?: string | null;
+          created_by?: string | null; // DEFAULT auth.uid() in the database (sql/002)
         };
         Update: Partial<Database["public"]["Tables"]["tasks"]["Row"]>;
         Relationships: [
